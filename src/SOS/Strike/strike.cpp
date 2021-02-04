@@ -7041,68 +7041,78 @@ DECLARE_API(Threads)
 {
     INIT_API();
 
-    BOOL bPrintSpecialThreads = FALSE;
-    BOOL bPrintLiveThreadsOnly = FALSE;
-    BOOL bSwitchToManagedExceptionThread = FALSE;
-    BOOL dml = FALSE;
-
-    CMDOption option[] =
-    {   // name, vptr, type, hasValue
-        {"-special", &bPrintSpecialThreads, COBOOL, FALSE},
-        {"-live", &bPrintLiveThreadsOnly, COBOOL, FALSE},
-        {"-managedexception", &bSwitchToManagedExceptionThread, COBOOL, FALSE},
-        {"/d", &dml, COBOOL, FALSE},
-    };
-    if (!GetCMDOption(args, option, _countof(option), NULL, 0, NULL))
+    IHostServices* hostServices = GetHostServices();
+    if (hostServices != nullptr)
     {
-        return Status;
+        std::string command("threads");
+        command.append(args);
+        Status = hostServices->DispatchCommand(command.c_str());
     }
-
-    if (bSwitchToManagedExceptionThread)
+    else
     {
-        return SwitchToExceptionThread();
-    }
+        BOOL bPrintSpecialThreads = FALSE;
+        BOOL bPrintLiveThreadsOnly = FALSE;
+        BOOL bSwitchToManagedExceptionThread = FALSE;
+        BOOL dml = FALSE;
 
-    // We need to support minidumps for this command.
-    BOOL bMiniDump = IsMiniDumpFile();
-
-    EnableDMLHolder dmlHolder(dml);
-
-    try
-    {
-        Status = PrintThreadsFromThreadStore(bMiniDump, bPrintLiveThreadsOnly);
-        if (bPrintSpecialThreads)
+        CMDOption option[] =
+        {   // name, vptr, type, hasValue
+            {"-special", &bPrintSpecialThreads, COBOOL, FALSE},
+            {"-live", &bPrintLiveThreadsOnly, COBOOL, FALSE},
+            {"-managedexception", &bSwitchToManagedExceptionThread, COBOOL, FALSE},
+            {"/d", &dml, COBOOL, FALSE},
+        };
+        if (!GetCMDOption(args, option, _countof(option), NULL, 0, NULL))
         {
-#ifdef FEATURE_PAL
-            Print("\n-special not supported.\n");
-#else //FEATURE_PAL
-            BOOL bSupported = true;
-
-            if (!IsWindowsTarget())
-            {
-                Print("Special thread information is only supported on Windows targets.\n");
-                bSupported = false;
-            }
-            else if (bMiniDump)
-            {
-                Print("Special thread information is not available in mini dumps.\n");
-                bSupported = false;
-            }
-
-            if (bSupported)
-            {
-                CheckBreakingRuntimeChange();
-
-                HRESULT Status2 = PrintSpecialThreads();
-                if (!SUCCEEDED(Status2))
-                    Status = Status2;
-            }
-#endif // FEATURE_PAL
+            return Status;
         }
-    }
-    catch (sos::Exception &e)
-    {
-        ExtOut("%s\n", e.what());
+
+        if (bSwitchToManagedExceptionThread)
+        {
+            return SwitchToExceptionThread();
+        }
+
+        // We need to support minidumps for this command.
+        BOOL bMiniDump = IsMiniDumpFile();
+
+        EnableDMLHolder dmlHolder(dml);
+
+        try
+        {
+            Status = PrintThreadsFromThreadStore(bMiniDump, bPrintLiveThreadsOnly);
+            if (bPrintSpecialThreads)
+            {
+    #ifdef FEATURE_PAL
+                Print("\n-special not supported.\n");
+    #else //FEATURE_PAL
+                BOOL bSupported = true;
+
+                if (!IsWindowsTarget())
+                {
+                    Print("Special thread information is only supported on Windows targets.\n");
+                    bSupported = false;
+                }
+                else if (bMiniDump)
+                {
+                    Print("Special thread information is not available in mini dumps.\n");
+                    bSupported = false;
+                }
+
+                if (bSupported)
+                {
+                    CheckBreakingRuntimeChange();
+
+                    HRESULT Status2 = PrintSpecialThreads();
+                    if (!SUCCEEDED(Status2))
+                        Status = Status2;
+                }
+    #endif // FEATURE_PAL
+            }
+        }
+        catch (sos::Exception &e)
+        {
+            ExtOut("%s\n", e.what());
+        }
     }
 
     return Status;

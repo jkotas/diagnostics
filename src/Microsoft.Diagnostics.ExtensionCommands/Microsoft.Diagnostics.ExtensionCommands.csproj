@@ -21,4 +21,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Microsoft.Diagnostics.DebugServices\Microsoft.Diagnostics.DebugServices.csproj" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <Reference Include="Microsoft.Diagnostics.RuntimeSnapshotParser">
+      <HintPath>..\..\..\dotnet-diagnostictests.noahfalk\src\RuntimeSnapshotParser\Microsoft.Diagnostics.RuntimeSnapshotParser\bin\Debug\netstandard2.0\Microsoft.Diagnostics.RuntimeSnapshotParser.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

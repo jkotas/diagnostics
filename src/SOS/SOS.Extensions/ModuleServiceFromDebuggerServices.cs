@@ -157,6 +157,13 @@ namespace SOS.Extensions
                         {
                             Trace.TraceError("GetModuleName({0}) {1:X16} FAILED {2:X8}", moduleIndex, imageBase, hr);
                         }
+
+                        if (imageName.EndsWith("CoreCLR.dll"))
+                        {
+                            // TODO: is this the best approach? This is a bandaid for ClrMD not doing case insensitive compare on coreclr.dll
+                            imageName = imageName.Replace("CoreCLR.dll", "coreclr.dll");
+                        }
+
                         var module = new ModuleFromDebuggerServices(this, moduleIndex, imageName, imageBase, imageSize, (uint)imageSize, timestamp);
                         if (!modules.TryGetValue(imageBase, out IModule original))
                         {

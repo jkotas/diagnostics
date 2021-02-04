@@ -25,7 +25,7 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
         private DataTarget _dataTarget;
         private string _runtimeModuleDirectory;
         private List<Runtime> _runtimes;
-        private Runtime _currentRuntime;
+        private IRuntime _currentRuntime;
         private IModuleService _moduleService;
         private IThreadService _threadService;
         private IMemoryService _memoryService;
@@ -234,7 +234,7 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
         /// <summary>
         /// Find the runtime
         /// </summary>
-        private Runtime FindRuntime()
+        private IRuntime FindRuntime()
         {
             IEnumerable<Runtime> runtimes = BuildRuntimes();
             Runtime runtime = null;
@@ -260,6 +260,16 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
                     }
                 }
             }
+
+            // Check for Native AOT if we haven't found a runtime yet
+            if (runtime == null)
+            {
+                if (NativeAOTRuntime.HasNativeAOTRuntime(_target, this))
+                {
+                    return new NativeAOTRuntime(_target, this);
+                }
+            }
+
             return runtime;
         }
 
@@ -315,7 +325,7 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
             {
                 if (_threadService == null)
                 {
-                    _threadService = _target.Services.GetService<IThreadService>();
+                    _threadService = _currentRuntime?.Services.GetService<IThreadService>() ?? _target.Services.GetService<IThreadService>();
                 }
                 return _threadService;
             }

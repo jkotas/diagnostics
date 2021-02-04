@@ -15,6 +15,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Diagnostics.RuntimeSnapshotParser;
 
 namespace SOS.Extensions
 {
@@ -360,6 +361,8 @@ namespace SOS.Extensions
                     services.AddServiceFactory<IRuntime>(() => runtimeService.CurrentRuntime);
                     services.AddServiceFactory<ClrRuntime>(() => services.GetService<IRuntime>()?.Services.GetService<ClrRuntime>());
                     services.AddServiceFactory<ClrMDHelper>(() => new ClrMDHelper(services.GetService<ClrRuntime>()));
+                    
+                    services.AddServiceFactory<ProcessSnapshot>(() => services.GetService<IRuntime>()?.Services.GetService<ProcessSnapshot>());
                 }
             }
             return services;

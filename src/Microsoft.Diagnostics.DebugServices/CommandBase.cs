@@ -32,6 +32,14 @@ namespace Microsoft.Diagnostics.DebugServices
         }
 
         /// <summary>
+        /// Display a blank line
+        /// </summary>
+        protected void WriteLine()
+        {
+            Console.Write(Environment.NewLine);
+        }
+
+        /// <summary>
         /// Display line
         /// </summary>
         /// <param name="message">line message</param>

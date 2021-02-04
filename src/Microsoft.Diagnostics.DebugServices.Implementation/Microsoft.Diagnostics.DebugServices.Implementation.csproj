@@ -10,6 +10,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <IsShippingAssembly>false</IsShippingAssembly>
+    <AssemblyOriginatorKeyFile>C:\Users\dave\.nuget\packages\microsoft.dotnet.arcade.sdk\6.0.0-beta.21078.12\tools\snk/35MSSharedLib1024.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   
   <ItemGroup>
@@ -21,5 +22,11 @@
   
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\Microsoft.Diagnostics.DebugServices\Microsoft.Diagnostics.DebugServices.csproj" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Reference Include="Microsoft.Diagnostics.RuntimeSnapshotParser">
+      <HintPath>..\..\..\dotnet-diagnostictests.noahfalk\src\RuntimeSnapshotParser\Microsoft.Diagnostics.RuntimeSnapshotParser\bin\Debug\netstandard2.0\Microsoft.Diagnostics.RuntimeSnapshotParser.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

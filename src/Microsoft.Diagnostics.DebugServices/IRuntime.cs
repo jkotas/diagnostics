@@ -14,7 +14,8 @@ namespace Microsoft.Diagnostics.DebugServices
         Desktop     = 0,
         NetCore     = 1,
         SingleFile  = 2,
-        Unknown     = 3
+        Unknown     = 3,
+        NativeAOT   = 4
     }
 
     /// <summary>

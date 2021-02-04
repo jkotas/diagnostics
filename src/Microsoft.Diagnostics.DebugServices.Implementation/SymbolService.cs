@@ -395,7 +395,7 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
             catch (Exception ex) when 
                 (ex is UnauthorizedAccessException || 
                  ex is BadImageFormatException || 
-                 ex is InvalidVirtualAddressException || 
+                 ex is Microsoft.FileFormats.InvalidVirtualAddressException || 
                  ex is IOException)
             {
                 Trace.TraceError($"GetMetaData: {ex.Message}");
