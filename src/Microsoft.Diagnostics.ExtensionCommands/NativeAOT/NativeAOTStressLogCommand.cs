@@ -10,6 +10,13 @@ namespace Microsoft.Diagnostics.DebugServices.NativeAOT
     [Command(Name = "aotstresslog", Help = "Displays stress log entries.")]
     public class NativeAOTStressLogCommand : CommandBase
     {
+        class StressLogEntry
+        {
+            public IRuntimeThread Thread;
+            public string Message;
+            public ulong Timestamp;
+        }
+
         public ProcessSnapshot Snapshot { get; set; }
 
         public override void Invoke()
@@ -20,26 +27,38 @@ namespace Microsoft.Diagnostics.DebugServices.NativeAOT
                 return;
             }
 
+            WriteLine("Dumping StressLog...");
+            WriteLine();
+            WriteLine("Thread     Timestamp        Message");
+            WriteLine("--------------------------------------------------------------------------------------");
             var entries = Snapshot.Runtimes.First().StressLogEntries;
+            foreach (StressLogEntry entry in SortEntries(entries))
+            {
+                Write($"{entry.Thread.ID,-10:X} {entry.Timestamp,-16:X} {entry.Message}");
+                WriteLine();
+            }
+
+            WriteLine("--------------------------------------------------------------------------------------");
+        }
+
+        private IEnumerable<StressLogEntry> SortEntries(Dictionary<IRuntimeThread, IEnumerable<IStressLogEntry>> entries)
+        {
+            List<StressLogEntry> allEntries = new List<StressLogEntry>();
             foreach (IRuntimeThread thread in entries.Keys)
             {
-                WriteLine($"Printing stress log messages for thread ID={thread.ID}");
-
                 foreach (IStressLogEntry entry in entries[thread])
                 {
-                    Write($"    Timestamp={entry.Timestamp} Message={entry.Message} ");
-                    if (entry.Args.Count > 0)
+                    StressLogEntry mergedEntry = new StressLogEntry()
                     {
-                        Write("        Args =");
-                    }
-                    foreach (ulong arg in entry.Args)
-                    {
-                        Write($" 0x{arg.ToString("x")}");
-                    }
-
-                    WriteLine();
+                        Thread = thread,
+                        Message = entry.Message,
+                        Timestamp = entry.Timestamp
+                    };
+                    allEntries.Add(mergedEntry);
                 }
             }
+
+            return allEntries.OrderBy(x => x.Timestamp);
         }
     }
 }
