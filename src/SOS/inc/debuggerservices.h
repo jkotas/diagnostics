@@ -143,6 +143,17 @@ public:
         ULONG moduleIndex,
         PCSTR name,
         PULONG64 offset) = 0;
+
+    virtual HRESULT STDMETHODCALLTYPE GetTypeId(
+        ULONG64 moduleBase,
+        PCSTR typeName,
+        PULONG64 typeId) = 0; 
+
+    virtual HRESULT STDMETHODCALLTYPE GetFieldOffset(
+        ULONG64 moduleBase,
+        ULONG64 typeId,
+        PCSTR fieldName,
+        PULONG offset) = 0;
 };
 
 #ifdef __cplusplus

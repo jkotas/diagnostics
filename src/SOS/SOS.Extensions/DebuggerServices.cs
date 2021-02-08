@@ -323,6 +323,28 @@ namespace SOS
                 return VTable.GetOffsetBySymbol(Self, moduleIndex, symbolPtr, out address);
             }
         }
+
+        public HResult GetTypeId(ulong moduleBase, string typeName, out ulong typeId)
+        {
+            if (string.IsNullOrEmpty(typeName)) throw new ArgumentException(nameof(typeName));
+
+            byte[] typeNameBytes = Encoding.ASCII.GetBytes(typeName + "\0");
+            fixed (byte* typeNamePtr = typeNameBytes)
+            {
+                return VTable.GetTypeId(Self, moduleBase, typeNamePtr, out typeId);
+            }
+        }
+
+        public HResult GetFieldOffset(ulong moduleBase, ulong typeId, string fieldName, out uint offset)
+        {
+            if (string.IsNullOrEmpty(fieldName)) throw new ArgumentException(nameof(fieldName));
+
+            byte[] fieldNameBytes = Encoding.ASCII.GetBytes(fieldName + "\0");
+            fixed (byte *fieldNamePtr = fieldNameBytes)
+            {
+                return VTable.GetFieldOffset(Self, moduleBase, typeId, fieldNamePtr, out offset);
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -350,5 +372,7 @@ namespace SOS
         public readonly delegate* unmanaged[Stdcall]<IntPtr, byte*, uint, out uint, HResult> GetSymbolPath;
         public readonly delegate* unmanaged[Stdcall]<IntPtr, int, ulong, byte*, int, out uint, out ulong, HResult> GetSymbolByOffset;
         public readonly delegate* unmanaged[Stdcall]<IntPtr, int, byte*, out ulong, HResult> GetOffsetBySymbol;
+        public readonly delegate* unmanaged[Stdcall]<IntPtr, ulong, byte*, out ulong, HResult> GetTypeId;
+        public readonly delegate* unmanaged[Stdcall]<IntPtr, ulong, ulong, byte*, out uint, HResult> GetFieldOffset;
     }
 }

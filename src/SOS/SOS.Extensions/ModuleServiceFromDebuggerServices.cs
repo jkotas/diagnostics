@@ -20,7 +20,61 @@ namespace SOS.Extensions
     /// </summary>
     internal class ModuleServiceFromDebuggerServices : ModuleService
     {
-        class ModuleFromDebuggerServices : Module, IExportSymbols, IModuleSymbols
+        class FieldFromDebuggerServices : IField
+        {
+            private IType _type;
+            private string _fieldName;
+            private uint _offset;
+
+            public FieldFromDebuggerServices(IType type, string fieldName, uint offset)
+            {
+                _type = type;
+                _fieldName = fieldName;
+                _offset = offset;
+            }
+
+            public string Name => _fieldName;
+
+            public uint Offset => _offset;
+
+            public IType Type => _type;
+        }
+
+        class TypeFromDebuggerServices : IType
+        {
+            private ModuleServiceFromDebuggerServices _moduleService;
+            private IModule _module;
+            private ulong _typeId;
+
+            public TypeFromDebuggerServices(ModuleServiceFromDebuggerServices moduleService, IModule module, ulong typeId)
+            {
+                _moduleService = moduleService;
+                _module = module;
+                _typeId = typeId;
+            }
+
+            public string Name => throw new NotImplementedException();
+
+            public string ModuleName => throw new NotImplementedException();
+
+            public List<IField> Fields => throw new NotImplementedException();
+
+            public bool TryGetField(string fieldName, out IField field)
+            {
+                uint offset = 0;
+                HResult hr = _moduleService._debuggerServices.GetFieldOffset(_module.ImageBase, _typeId, fieldName, out offset);
+                if (hr != HResult.S_OK)
+                {
+                    field = null;
+                    return false;
+                }
+
+                field = new FieldFromDebuggerServices(this, fieldName, offset);
+                return true;
+            }
+        }
+
+        class ModuleFromDebuggerServices : Module, IExportSymbols, IModuleSymbols, IModuleTypeService
         {
             // This is what dbgeng/IDebuggerServices returns for non-PE modules that don't have a timestamp
             private const uint InvalidTimeStamp = 0xFFFFFFFE;
@@ -47,6 +101,7 @@ namespace SOS.Extensions
 
                 ServiceProvider.AddService<IExportSymbols>(this);
                 ServiceProvider.AddService<IModuleSymbols>(this);
+                ServiceProvider.AddService<IModuleTypeService>(this);
             }
 
             #region IModule
@@ -121,6 +176,24 @@ namespace SOS.Extensions
             public bool TryGetSymbolAddress(string name, out ulong address)
             {
                 return _moduleService._debuggerServices.GetOffsetBySymbol(ModuleIndex, name, out address) == HResult.S_OK;
+            }
+
+            #endregion
+
+            #region IModuleTypeService
+
+            public bool TryGetType(string typeName, out IType type)
+            {
+                ulong typeId = 0;
+                HResult hr = _moduleService._debuggerServices.GetTypeId(ImageBase, typeName, out typeId);
+                if (hr != HResult.S_OK)
+                {
+                    type = null;
+                    return false;
+                }
+
+                type = new TypeFromDebuggerServices(_moduleService, this, typeId);
+                return true;
             }
 
             #endregion

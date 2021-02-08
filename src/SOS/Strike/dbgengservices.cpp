@@ -439,6 +439,31 @@ DbgEngServices::GetOffsetBySymbol(
     return m_symbols->GetOffsetByName(symbolName.c_str(), offset);
 }
 
+HRESULT
+DbgEngServices::GetTypeId(
+    ULONG64 moduleBase,
+    PCSTR typeName,
+    PULONG64 typeId)
+{
+    ULONG typeIdTemp = 0;
+    HRESULT hr = m_symbols->GetTypeId(moduleBase, typeName, &typeIdTemp);
+
+    // typeId is 64 bit for compatibility across platforms, can't pass it in to GetTypeId
+    // that expects a 32 bit ULONG.
+    *typeId = typeIdTemp;
+    return hr;
+}
+
+HRESULT 
+DbgEngServices::GetFieldOffset(
+    ULONG64 moduleBase,
+    ULONG64 typeId,
+    PCSTR fieldName,
+    PULONG offset)
+{
+    return m_symbols->GetFieldOffset(moduleBase, (ULONG)typeId, fieldName, offset);
+}
+
 //----------------------------------------------------------------------------
 // IRemoteMemoryService
 //----------------------------------------------------------------------------

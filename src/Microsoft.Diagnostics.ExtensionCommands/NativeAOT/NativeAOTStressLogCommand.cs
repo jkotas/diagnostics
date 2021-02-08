@@ -28,6 +28,7 @@ namespace Microsoft.Diagnostics.DebugServices.NativeAOT
             }
 
             WriteLine("Dumping StressLog...");
+            WriteLine($"Current Directory: {Environment.CurrentDirectory}");
             WriteLine();
             WriteLine("Thread     Timestamp        Message");
             WriteLine("--------------------------------------------------------------------------------------");

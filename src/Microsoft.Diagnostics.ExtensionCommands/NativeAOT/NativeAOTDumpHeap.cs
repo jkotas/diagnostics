@@ -41,6 +41,7 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             if (!Stats && !Short)
             {
                 WriteLine($"{PadByNumberSize("Address", false)} {PadByNumberSize("EEtype", false)} {PadByNumberSize("Size", false)}");
+                WriteLine("--------------------------------------------------------------------------------------");
             }
 
             Dictionary<ulong, TypeStats> typeStats = new Dictionary<ulong, TypeStats>();
@@ -62,7 +63,7 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
                         TypeStats stats = GetOrCreateTypeStats(typeStats, eeType);
                         stats.count++;
-                        stats.totalSizeInBytes += GetObjectRealSize(obj, eeType);
+                        stats.totalSizeInBytes += obj.Size;
                     }
                 }
             }
@@ -74,7 +75,8 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
         {
             WriteLine();
             WriteLine($"{PadByNumberSize("EEType  ", false)} {PadByNumberSize("Count  ", false)} {PadByNumberSize("TotalSize  ", false)} Class Name");
-            
+            WriteLine("--------------------------------------------------------------------------------------");
+
             foreach (TypeStats stats in typeStats.Values)
             {
                 WriteLine($"{PadByNumberSize(stats.type.Address)} {PadByNumberSize(stats.count)} {PadByNumberSize(stats.totalSizeInBytes)} {stats.type.FullName}");
@@ -89,7 +91,7 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             }
             else
             {
-                WriteLine($"{PadByNumberSize(obj.Address)} {PadByNumberSize(eeType.Address)} {PadByNumberSize(GetObjectRealSize(obj, eeType))}");
+                WriteLine($"{PadByNumberSize(obj.Address)} {PadByNumberSize(eeType.Address)} {PadByNumberSize(obj.Size)}");
             }
         }
 
@@ -118,11 +120,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             return true;
         }
 
-        private static ulong GetObjectRealSize(IRuntimeObject obj, NativeAOTType eeType)
-        {
-            return (ulong)(eeType.BaseSize + (eeType.ComponentSize * obj.ArraySize));
-        }
-
         TypeStats GetOrCreateTypeStats(Dictionary<ulong, TypeStats> dictionary, NativeAOTType eeType)
         {
             ulong eeTypeAddr = (ulong)eeType.Address;
@@ -136,15 +133,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             }
 
             return dictionary[eeTypeAddr];
-        }
-    }
-
-    public static class StringExtensions
-    {
-        // Why is this not part of the BCL at this point?
-        public static bool Contains(this string str, string other, StringComparison comparison)
-        {
-            return str.IndexOf(other, comparison) >= 0;
         }
     }
 }

@@ -180,6 +180,17 @@ public:
         PCSTR name,
         PULONG64 offset);
 
+    HRESULT STDMETHODCALLTYPE GetTypeId(
+        ULONG64 moduleBase,
+        PCSTR typeName,
+        PULONG64 typeId); 
+
+    HRESULT STDMETHODCALLTYPE GetFieldOffset(
+        ULONG64 moduleBase,
+        ULONG64 typeId,
+        PCSTR fieldName,
+        PULONG offset);
+
     //----------------------------------------------------------------------------
     // IRemoteMemoryService
     //----------------------------------------------------------------------------
