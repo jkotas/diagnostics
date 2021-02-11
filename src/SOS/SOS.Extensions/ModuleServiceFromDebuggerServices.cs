@@ -62,7 +62,7 @@ namespace SOS.Extensions
             public bool TryGetField(string fieldName, out IField field)
             {
                 uint offset = 0;
-                HResult hr = _moduleService._debuggerServices.GetFieldOffset(_module.ImageBase, _typeId, fieldName, out offset);
+                HResult hr = _moduleService._debuggerServices.GetFieldOffset(_module.ModuleIndex, _typeId, fieldName, out offset);
                 if (hr != HResult.S_OK)
                 {
                     field = null;
@@ -185,7 +185,7 @@ namespace SOS.Extensions
             public bool TryGetType(string typeName, out IType type)
             {
                 ulong typeId = 0;
-                HResult hr = _moduleService._debuggerServices.GetTypeId(ImageBase, typeName, out typeId);
+                HResult hr = _moduleService._debuggerServices.GetTypeId(ModuleIndex, typeName, out typeId);
                 if (hr != HResult.S_OK)
                 {
                     type = null;

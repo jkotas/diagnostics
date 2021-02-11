@@ -385,6 +385,17 @@ public:
         PCSTR name,
         PULONG64 offset);
 
+    HRESULT STDMETHODCALLTYPE GetTypeId(
+        ULONG moduleIndex,
+        PCSTR typeName,
+        PULONG64 typeId); 
+
+    HRESULT STDMETHODCALLTYPE GetFieldOffset(
+        ULONG moduleIndex,
+        ULONG64 typeId,
+        PCSTR fieldName,
+        PULONG offset);
+
     //----------------------------------------------------------------------------
     // LLDBServices (internal)
     //----------------------------------------------------------------------------

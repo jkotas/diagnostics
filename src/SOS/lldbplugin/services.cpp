@@ -2330,6 +2330,113 @@ exit:
     return hr;
 }
 
+HRESULT
+LLDBServices::GetTypeId(
+    ULONG moduleIndex,
+    PCSTR typeName,
+    PULONG64 typeId)
+{
+    HRESULT hr = S_OK;
+
+    lldb::SBTarget target;
+    lldb::SBModule module;
+    lldb::SBTypeList typeList;
+    lldb::SBType type;
+
+    if (typeId == nullptr)
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
+    *typeId = -1;
+
+    target = m_debugger.GetSelectedTarget();
+    if (!target.IsValid())
+    {
+        hr = E_FAIL;
+        goto exit;
+    }
+
+    module = target.GetModuleAtIndex(moduleIndex);
+    if (!module.IsValid())
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
+    typeList = module.GetTypes();
+    for (int i = 0; i < typeList.GetSize(); ++i)
+    {
+        type = typeList.GetTypeAtIndex(i);
+        if (strcmp(typeName, type.GetName()) == 0)
+        {
+            *typeId = i;
+            break;
+        }
+    }
+
+exit:
+    return hr;
+}
+
+HRESULT
+LLDBServices::GetFieldOffset(
+    ULONG moduleIndex,
+    ULONG64 typeId,
+    PCSTR fieldName,
+    PULONG offset)
+{
+    HRESULT hr = S_OK;
+
+    lldb::SBTarget target;
+    lldb::SBModule module;
+    lldb::SBType type;
+    lldb::SBTypeMember field;
+
+    if (offset == nullptr)
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
+    *offset = -1;
+
+    target = m_debugger.GetSelectedTarget();
+    if (!target.IsValid())
+    {
+        hr = E_FAIL;
+        goto exit;
+    }
+
+    module = target.GetModuleAtIndex(moduleIndex);
+    if (!module.IsValid())
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
+    type = module.GetTypeByID(typeId);
+    if (!type.IsValid())
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
+    for (int i = 0; i < type.GetNumberOfFields(); ++i)
+    {
+        field = type.GetFieldAtIndex(i);
+        if (strcmp(fieldName, field.GetName()) == 0)
+        {
+            *offset = field.GetOffsetInBytes();
+            break;
+        }
+    }
+
+exit:
+    return hr;
+}
+
 //----------------------------------------------------------------------------
 // Helper functions
 //----------------------------------------------------------------------------

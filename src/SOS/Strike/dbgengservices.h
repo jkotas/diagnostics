@@ -181,12 +181,12 @@ public:
         PULONG64 offset);
 
     HRESULT STDMETHODCALLTYPE GetTypeId(
-        ULONG64 moduleBase,
+        ULONG moduleIndex,
         PCSTR typeName,
         PULONG64 typeId); 
 
     HRESULT STDMETHODCALLTYPE GetFieldOffset(
-        ULONG64 moduleBase,
+        ULONG moduleIndex,
         ULONG64 typeId,
         PCSTR fieldName,
         PULONG offset);
