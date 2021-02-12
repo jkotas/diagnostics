@@ -29,6 +29,9 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
         [Option(Name = "--tasks", Help = "Print any task derived object.")]
         public bool Tasks { get; set; }
 
+        [Option(Name = "--stacks", Help = "Print async stacks for objects.")]
+        public bool Stacks { get; set; }
+
         public override void Invoke()
         {
             if (Snapshot == null)
@@ -60,6 +63,8 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
             foreach (IRuntimeGCHeap heap in runtime.GC.Heaps)
             {
+                //throw new Exception("TODO: Stacks view. Filter to unique stacks if no filter is applied.");
+
                 HeapWalker walker = heap.GetHeapWalker();
 
                 foreach (IRuntimeObject obj in walker.EnumerateHeapObjects())
@@ -77,11 +82,15 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                         int state = GetState(typeService, runtime.Reader, obj);
                         DumpState(state);
 
-                        IRuntimeObject continuations = GetContinuations(typeService, runtime.Reader, runtime, obj);
-                        Write($"    Continuation object @ 0x{continuations.Address:X} ");
-                        if (continuations.Address != 0x0)
+                        IEnumerable<IRuntimeObject> continuations = GetContinuations(typeService, runtime.Reader, runtime, obj);
+                        WriteLine($"    Number of Continuations: {continuations.Count}");
+                        foreach (IRuntimeObject continuation in continuations)
                         {
-                            Write($"Type: {continuations.Type.FullName}");
+                            Write($"    Continuation object @ 0x{continuation.Address:X} ");
+                            if (continuation.Address != 0x0)
+                            {
+                                Write($"Type: {continuation.Type.FullName}");
+                            }
                         }
 
                         WriteLine();
@@ -141,11 +150,75 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             return state;
         }
 
-        private IRuntimeObject GetContinuations(IModuleTypeService typeService, Reader reader, IDotNetRuntime runtime, IRuntimeObject obj)
+        private IEnumerable<IRuntimeObject> GetContinuations(IModuleTypeService typeService, Reader reader, NativeAOTRuntime runtime, IRuntimeObject obj)
         {
-            IField continuationField = GetField(typeService, obj, "m_continuationObject");
-            ulong continuationsObjAddr = reader.Read<SizeT>(obj.Address + continuationField.Offset);
-            return new NativeAOTObject(continuationsObjAddr, (NativeAOTRuntime)runtime);
+            List<IRuntimeObject> continuationObjects = new List<IRuntimeObject>();
+            if (IsList(obj))
+            {
+                IField listItemsField = GetField(typeService, obj, "_items");
+                ulong arrayAddrAddr = obj.Address + listItemsField.Offset;
+                ulong arrayAddr = reader.Read<SizeT>(arrayAddrAddr);
+                NativeAOTObject backingArray = new NativeAOTObject(arrayAddr, runtime);
+                for (uint i = 0; i < backingArray.ComponentSize; ++i)
+                {
+                    ulong continuationAddrAddr = arrayAddr + (i * reader.SizeOf<SizeT>());
+                    ulong continuationAddr = reader.Read<SizeT>(continuationAddrAddr);
+                    if (continuationAddr != 0)
+                    {
+                        continuationObjects.Add(new NativeAOTObject(continuationAddr, runtime));
+                    }
+                }
+            }
+            else
+            {
+                IField continuationField = GetField(typeService, obj, "m_continuationObject");
+                ulong continuationsObjAddr = reader.Read<SizeT>(obj.Address + continuationField.Offset);
+                continuationObjects.Add(new NativeAOTObject(continuationsObjAddr, runtime));
+            }
+
+            return continuationObjects.Select(obj => ResolveContinuation(typeService, reader, obj));
+        }
+
+        private IRuntimeObject ResolveContinuation(IModuleTypeService typeService, Reader reader, NativeAOTRuntime runtime, IRuntimeObject continuationObj)
+        {
+            if (!TryGetField(typeService, continuationObj, "StateMachine", out _))
+            {
+                IField innerField;
+                if (TryGetField(typeService, continuationObj, "m_task", out innerField))
+                {
+                    ulong taskAddrAddr = continuationObj.Address + innerField.Offset;
+                    continuationObj = GetObjectFromPtrToPtr(reader, runtime, taskAddrAddr);
+                }
+                else
+                {
+                    if (TryGetField(typeService, continuationObj, "m_action", out innerField))
+                    {
+
+                    }
+                }
+            }
+
+            return continuationObj;
+        }
+
+        private bool IsList(IRuntimeObject obj)
+        {
+            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Collections_Generic_List_1");
+        }
+
+        private static bool TryGetField(IModuleTypeService typeService, IRuntimeObject obj, string fieldName, out IField field)
+        {
+            try
+            {
+                field = GetField(typeService, obj, fieldName);
+            }
+            catch (Exception)
+            {
+                field = null;
+                return false;
+            }
+
+            return true;
         }
 
         private static IField GetField(IModuleTypeService typeService, IRuntimeObject obj, string fieldName)
@@ -189,5 +262,13 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_1<")
                                   || obj.Type.FullName.Equals("S_P_CoreLib_System_Threading_Tasks_Task");
         }
+
+        private static IRuntimeObject GetObjectFromPtrToPtr(Reader reader, NativeAOTRuntime runtime, ulong objAddrAddr)
+        {
+            ulong objAddr = reader.Read<SizeT>(objAddrAddr);
+            IRuntimeObject obj = new NativeAOTObject(objAddr, runtime);
+            return obj;
+        }
+
     }
 }
