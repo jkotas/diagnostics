@@ -16,9 +16,9 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
         ProcessSnapshot _snapshot;
         ServiceProvider _serviceProvider;
 
-        public NativeAOTRuntime(ITarget target, IDataReader dataReader)
+        public NativeAOTRuntime(ITarget target, IMemoryService memoryService)
         {
-            var tuple = GetDotNetRuntime(target, dataReader);
+            var tuple = GetDotNetRuntime(target, memoryService);
             _snapshot = tuple.Item1;
             _runtime = (SnapshotParserNativeAOTRuntime)tuple.Item2;
 
@@ -51,14 +51,14 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
             throw new ArgumentException("Native AOT does not have a DBI.");
         }
 
-        public static bool HasNativeAOTRuntime(ITarget target, IDataReader dataReader)
+        public static bool HasNativeAOTRuntime(ITarget target, IMemoryService memoryService)
         {
-            return GetDotNetRuntime(target, dataReader).Item2 != null;
+            return GetDotNetRuntime(target, memoryService).Item2 != null;
         }
 
-        private static (ProcessSnapshot, IDotNetRuntime) GetDotNetRuntime(ITarget target, IDataReader dataReader)
+        private static (ProcessSnapshot, IDotNetRuntime) GetDotNetRuntime(ITarget target, IMemoryService memoryService)
         {
-            ProcessSnapshotDataSourceWrapper dataSource = new ProcessSnapshotDataSourceWrapper(dataReader, target.Services);
+            ProcessSnapshotDataSourceWrapper dataSource = new ProcessSnapshotDataSourceWrapper(memoryService, target, target.Services);
 
             try
             {

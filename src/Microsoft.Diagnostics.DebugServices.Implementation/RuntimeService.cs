@@ -264,9 +264,9 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
             // Check for Native AOT if we haven't found a runtime yet
             if (runtime == null)
             {
-                if (NativeAOTRuntime.HasNativeAOTRuntime(_target, this))
+                if (NativeAOTRuntime.HasNativeAOTRuntime(_target, MemoryService))
                 {
-                    return new NativeAOTRuntime(_target, this);
+                    return new NativeAOTRuntime(_target, MemoryService);
                 }
             }
 

@@ -1,5 +1,4 @@
-﻿using Microsoft.Diagnostics.Runtime;
-using Microsoft.Diagnostics.RuntimeSnapshotParser;
+﻿using Microsoft.Diagnostics.RuntimeSnapshotParser;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -44,13 +43,15 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation.NativeAOT
     }
     public class ProcessSnapshotDataSourceWrapper : IProcessSnapshotDataSource
     {
-        private Diagnostics.Runtime.IDataReader _dataReader;
+        private IMemoryService _memoryService;
+        private ITarget _target;
         private Lazy<IEnumerable<IModule>> _modules;
         private IServiceProvider _services;
 
-        public ProcessSnapshotDataSourceWrapper(Diagnostics.Runtime.IDataReader dataReader, IServiceProvider services)
+        public ProcessSnapshotDataSourceWrapper(IMemoryService memoryService, ITarget target, IServiceProvider services)
         {
-            _dataReader = dataReader;
+            _memoryService = memoryService;
+            _target = target;
             _modules = new Lazy<IEnumerable<IModule>>(EnumerateModulesInner);
             _services = services;
         }
@@ -88,26 +89,12 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation.NativeAOT
 
         public bool ReadMemory(long address, Span<byte> buffer, out int bytesRead)
         {
-            bytesRead = _dataReader.Read((ulong)address, buffer);
-            return bytesRead > 0;
+            return _memoryService.ReadMemory((ulong)address, buffer, out bytesRead);
         }
 
         private System.Runtime.InteropServices.Architecture GetArchitecture()
         {
-            switch (_dataReader.Architecture)
-            {
-                case Diagnostics.Runtime.Architecture.X86:
-                    return System.Runtime.InteropServices.Architecture.X86;
-                case Diagnostics.Runtime.Architecture.Amd64:
-                    return System.Runtime.InteropServices.Architecture.X64;
-                case Diagnostics.Runtime.Architecture.Arm:
-                    return System.Runtime.InteropServices.Architecture.Arm;
-                case Diagnostics.Runtime.Architecture.Arm64:
-                    return System.Runtime.InteropServices.Architecture.Arm64;
-                case Diagnostics.Runtime.Architecture.Unknown:
-                default:
-                    throw new InvalidOperationException("Unknown architecture for data reader.");
-            }
+            return _target.Architecture;
         }
 
         private IEnumerable<IModule> EnumerateModulesInner()
