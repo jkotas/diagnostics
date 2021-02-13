@@ -12,13 +12,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
     [Command(Name = "aotdumpheap", Help = "Verifies objects on the GC heap(s).")]
     public class NativeAOTDumpHeap : CommandBase
     {
-        class TypeStats
-        {
-            public NativeAOTType type;
-            public uint count;
-            public ulong totalSizeInBytes;
-        }
-
         public ProcessSnapshot Snapshot { get; set; }
 
         [Option(Name = "--short", Help = "Restrict output to just the address.")]
@@ -40,11 +33,11 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
             if (!Stats && !Short)
             {
-                WriteLine($"{PadByNumberSize("Address", false)} {PadByNumberSize("EEtype", false)} {PadByNumberSize("Size", false)}");
+                WriteLine($"{FormatHelpers.PadByNumberSize("Address", false)} {FormatHelpers.PadByNumberSize("EEtype", false)} {FormatHelpers.PadByNumberSize("Size", false)}");
                 WriteLine("--------------------------------------------------------------------------------------");
             }
 
-            Dictionary<ulong, TypeStats> typeStats = new Dictionary<ulong, TypeStats>();
+            HeapStats stats = new HeapStats((str) => Write(str));
             IDotNetRuntime runtime = Snapshot.Runtimes.First();
             foreach (IRuntimeGCHeap heap in runtime.GC.Heaps)
             {
@@ -53,7 +46,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 foreach (IRuntimeObject obj in walker.EnumerateHeapObjects())
                 {
                     NativeAOTType eeType = (NativeAOTType)obj.Type;
-
                     if (Matches(eeType))
                     {
                         if (!Stats)
@@ -61,26 +53,12 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                             PrintObject(obj, eeType);
                         }
 
-                        TypeStats stats = GetOrCreateTypeStats(typeStats, eeType);
-                        stats.count++;
-                        stats.totalSizeInBytes += obj.Size;
+                        stats.Add(eeType, obj.Size);
                     }
                 }
             }
 
-            PrintStats(typeStats);
-        }
-
-        private void PrintStats(Dictionary<ulong, TypeStats> typeStats)
-        {
-            WriteLine();
-            WriteLine($"{PadByNumberSize("EEType  ", false)} {PadByNumberSize("Count  ", false)} {PadByNumberSize("TotalSize  ", false)} Class Name");
-            WriteLine("--------------------------------------------------------------------------------------");
-
-            foreach (TypeStats stats in typeStats.Values)
-            {
-                WriteLine($"{PadByNumberSize(stats.type.Address)} {PadByNumberSize(stats.count)} {PadByNumberSize(stats.totalSizeInBytes)} {stats.type.FullName}");
-            }
+            stats.Print();
         }
 
         private void PrintObject(IRuntimeObject obj, NativeAOTType eeType)
@@ -91,21 +69,7 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             }
             else
             {
-                WriteLine($"{PadByNumberSize(obj.Address)} {PadByNumberSize(eeType.Address)} {PadByNumberSize(obj.Size)}");
-            }
-        }
-
-        private string PadByNumberSize<T>(T item, bool prependHexSignifier = true)
-        {
-            if (prependHexSignifier)
-            {
-                // 16 = max number of hex bits in a 64 bit number
-                return $"0x{item,-16:X}";
-            }
-            else
-            {
-                // 18 = max number of hex bits in a 64 bit number + space for 0x
-                return $"{item,-18:X}";
+                WriteLine($"{FormatHelpers.PadByNumberSize(obj.Address)} {FormatHelpers.PadByNumberSize(eeType.Address)} {FormatHelpers.PadByNumberSize(obj.Size)}");
             }
         }
 
@@ -118,21 +82,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
             // No filter, everything matches
             return true;
-        }
-
-        TypeStats GetOrCreateTypeStats(Dictionary<ulong, TypeStats> dictionary, NativeAOTType eeType)
-        {
-            ulong eeTypeAddr = (ulong)eeType.Address;
-            if (!dictionary.ContainsKey(eeTypeAddr))
-            {
-                TypeStats stats = new TypeStats()
-                {
-                    type = eeType
-                };
-                dictionary.Add(eeTypeAddr, stats);
-            }
-
-            return dictionary[eeTypeAddr];
         }
     }
 }

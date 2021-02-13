@@ -4,6 +4,7 @@ using Microsoft.Diagnostics.RuntimeSnapshotParser.Common.GC;
 using Microsoft.Diagnostics.RuntimeSnapshotParser.NativeAOT;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
@@ -15,9 +16,32 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
     [Command(Name = "aotdumpasync", Help = "Displays state associated with async objects.")]
     public class NativeAOTDumpAsyncCommand : CommandBase
     {
+        class AsyncRecord
+        {
+            public Lazy<IEnumerable<NativeAOTObject>> continuations;
+            public Lazy<int> state;
+            public bool isTopLevel;
+            public bool includeInReport;
+        }
+
+        private Lazy<IModuleTypeService> _typeService;
+
         public ProcessSnapshot Snapshot { get; set; }
 
         public IModuleService ModuleService { get; set; }
+
+        private NativeAOTRuntime Runtime => (NativeAOTRuntime)Snapshot.Runtimes.First();
+
+        private Reader Reader => Runtime.Reader;
+
+        private IModuleTypeService TypeService => _typeService.Value;
+
+        private Dictionary<NativeAOTObject, AsyncRecord> _asyncRecordsCache = new Dictionary<NativeAOTObject, AsyncRecord>();
+
+        private Dictionary<ulong, NativeAOTObject> _objectsCache = new Dictionary<ulong, NativeAOTObject>();
+
+        // EEType address is the key
+        private Dictionary<ulong, Dictionary<string, IField>> _offsetsCache = new Dictionary<ulong, Dictionary<string, IField>>();
 
 
         [Option(Name = "--type", Aliases = new string[] { "-t" }, Help = "Only lists those objects whose type name is a substring match of the specified string.")]
@@ -32,6 +56,9 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
         [Option(Name = "--stacks", Help = "Print async stacks for objects.")]
         public bool Stacks { get; set; }
 
+        [Option(Name = "--completed", Help = "Print async operations that have already completed.")]
+        public bool Completed { get; set; }
+
         public override void Invoke()
         {
             if (Snapshot == null)
@@ -40,160 +67,397 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 return;
             }
 
-            IDotNetRuntime runtime = Snapshot.Runtimes.First();
-            IModuleTypeService typeService = null;
-
-            ulong runtimeModuleBase = runtime.RuntimeModuleBaseAddress;
-            foreach (IModule module in ModuleService.EnumerateModules())
+            _typeService = new Lazy<IModuleTypeService>(() =>
             {
-                if (module.ImageBase == runtimeModuleBase)
+                IDotNetRuntime runtime = Snapshot.Runtimes.First();
+                IModuleTypeService typeService = null;
+
+                ulong runtimeModuleBase = runtime.RuntimeModuleBaseAddress;
+                foreach (IModule module in ModuleService.EnumerateModules())
                 {
-                    typeService = module.Services.GetService<IModuleTypeService>();
-                    break;
+                    if (module.ImageBase == runtimeModuleBase)
+                    {
+                        typeService = module.Services.GetService<IModuleTypeService>();
+                        break;
+                    }
                 }
-            }
 
-            if (typeService == null)
-            {
-                WriteLine("Failed to request module type service, cannot walk async objects.");
-                return;
-            }
+                return typeService;
+            });
 
-            WriteLine("--------------------------------------------------------------------------------------");
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
 
-            foreach (IRuntimeGCHeap heap in runtime.GC.Heaps)
+            List<NativeAOTObject> foundObjs = new List<NativeAOTObject>();
+            foreach (IRuntimeGCHeap heap in Runtime.GC.Heaps)
             {
                 //throw new Exception("TODO: Stacks view. Filter to unique stacks if no filter is applied.");
 
                 HeapWalker walker = heap.GetHeapWalker();
 
-                foreach (IRuntimeObject obj in walker.EnumerateHeapObjects())
+                foreach (IRuntimeObject iobj in walker.EnumerateHeapObjects())
                 {
+                    NativeAOTObject obj = (NativeAOTObject)iobj;
                     if (obj.Size < 24)
                     {
                         // Too small to be a state machine or task
                         continue;
                     }
 
-                    if (Matches(obj))
+                    if (IsAsyncType(obj))
                     {
-                        WriteLine($"Async object @ 0x{obj.Address:X}");
-                        WriteLine($"    Type: {obj.Type.FullName}");
-                        int state = GetState(typeService, runtime.Reader, obj);
-                        DumpState(state);
+                        _objectsCache.Add(obj.Address, obj);
+                        bool include = Matches(obj) && (Completed || !IsCompleted(obj));
+                        SetIncludeInReport(obj, include);
 
-                        IEnumerable<IRuntimeObject> continuations = GetContinuations(typeService, runtime.Reader, runtime, obj);
-                        WriteLine($"    Number of Continuations: {continuations.Count}");
-                        foreach (IRuntimeObject continuation in continuations)
+                        if (Completed || !IsCompleted(obj))
                         {
-                            Write($"    Continuation object @ 0x{continuation.Address:X} ");
-                            if (continuation.Address != 0x0)
-                            {
-                                Write($"Type: {continuation.Type.FullName}");
-                            }
+                            foundObjs.Add(obj);
                         }
-
-                        WriteLine();
-                        WriteLine();
                     }
                 }
             }
 
+            sw.Stop();
+            WriteLine($"Finished enumerating heap in {sw.ElapsedMilliseconds}ms.");
+            sw.Restart();
+
+            if (Address == 0)
+            {
+                PrintStats(foundObjs);
+            }
+
+            sw.Stop();
+            WriteLine($"Finished printing stats in {sw.ElapsedMilliseconds}ms.");
+            sw.Restart();
+
+            if (Stacks && string.IsNullOrEmpty(Type))
+            {
+                CalculateTopLevelRecords(foundObjs, out int chains);
+                WriteLine($"In {chains} chains.");
+            }
+
+            sw.Stop();
+            WriteLine($"Finished calculating async stacks in {sw.ElapsedMilliseconds}ms.");
+            sw.Restart();
+
+            WriteLine();
+            WriteLine($"{FormatHelpers.PadByNumberSize("Address", false)} {FormatHelpers.PadByNumberSize("EEtype", false)} {FormatHelpers.PadByNumberSize("State", false)} State/Type");
+            PrintTopLevelObjs(foundObjs);
+
+            sw.Stop();
+            WriteLine($"Finished printing top level objs in {sw.ElapsedMilliseconds}ms.");
+            sw.Restart();
+
             WriteLine("--------------------------------------------------------------------------------------");
         }
 
-        private void DumpState(int state)
+        private void PrintTopLevelObjs(List<NativeAOTObject> asyncObjs)
         {
-            Write($"    State={state:X} ");
+            WriteLine();
 
-            Write("( ");
+            foreach (NativeAOTObject obj in asyncObjs)
+            {
+                if (!IsTopLevel(obj) || !IncludeInReport(obj))
+                {
+                    continue;
+                }
+
+                PrintAsyncRecord(obj);
+                WriteLine();
+
+                if (Stacks && GetContinuations(obj).Any())
+                {
+                    WalkContinuations(obj, (traversalObj, depth) =>
+                    {
+                        for (int i = 0; i < depth; ++i)
+                        {
+                            Write(".");
+                        }
+
+                        PrintAsyncRecord(traversalObj);
+                        WriteLine();
+                    });
+                }
+
+                WriteLine();
+            }
+        }
+
+        private bool IsTopLevel(NativeAOTObject obj)
+        {
+            AsyncRecord record = GetOrCreateAsyncRecord(obj);
+            return record.isTopLevel;
+        }
+
+        private void SetTopLevel(NativeAOTObject innerObj, bool topLevel)
+        {
+            AsyncRecord record = GetOrCreateAsyncRecord(innerObj);
+            record.isTopLevel = topLevel;
+        }
+
+        private bool IncludeInReport(NativeAOTObject obj)
+        {
+            AsyncRecord record = GetOrCreateAsyncRecord(obj);
+            return record.includeInReport;
+        }
+
+        private void SetIncludeInReport(NativeAOTObject innerObj, bool topLevel)
+        {
+            AsyncRecord record = GetOrCreateAsyncRecord(innerObj);
+            record.includeInReport = topLevel;
+        }
+
+        private void PrintAsyncRecord(NativeAOTObject obj)
+        {
+            NativeAOTType eeType = (NativeAOTType)obj.Type;
+            int state = GetState(obj);
+            Write($"{FormatHelpers.PadByNumberSize(obj.Address)} {FormatHelpers.PadByNumberSize(eeType.Address)} {FormatHelpers.PadByNumberSize(state)} {DumpState(state)} {eeType.FullName}");
+        }
+
+        private void PrintStats(List<NativeAOTObject> asyncObjs)
+        {
+            HeapStats stats = new HeapStats((x) => Write(x));
+            foreach (NativeAOTObject obj in asyncObjs)
+            {
+                stats.Add((NativeAOTType)obj.Type, obj.Size);
+            }
+
+            stats.Sort();
+            stats.Print();
+        }
+
+        private void CalculateTopLevelRecords(List<NativeAOTObject> asyncObjs, out int chains)
+        {
+            int numChains = asyncObjs.Count;
+            foreach (NativeAOTObject obj in asyncObjs)
+            {
+                //if (!include || !IsTopLevel(obj))
+                //{
+                //    continue;
+                //}
+
+                WalkContinuations(obj, (continuationObj, _) =>
+                {
+                    foreach (NativeAOTObject innerObj in asyncObjs)
+                    {
+                        if (IsTopLevel(innerObj) && innerObj == continuationObj)
+                        {
+                            SetTopLevel(innerObj, false);
+                            --numChains;
+                        }
+                    }
+                });
+            }
+
+            chains = numChains;
+        }
+
+        private void WalkContinuations(NativeAOTObject obj, Action<NativeAOTObject, int> callback)
+        {
+            Stack<Tuple<int, NativeAOTObject>> continuations = new Stack<Tuple<int, NativeAOTObject>>();
+            GetContinuations(obj).ForEach(obj => continuations.Push(Tuple.Create(1, obj)));
+
+            HashSet<NativeAOTObject> seenObjs = new HashSet<NativeAOTObject>();
+            while (continuations.Count > 0)
+            {
+                (int depth, NativeAOTObject traversalObj) = continuations.Pop();
+
+                if (seenObjs.Contains(traversalObj))
+                {
+                    continue;
+                }
+
+                seenObjs.Add(traversalObj);
+
+                IEnumerable<NativeAOTObject> continuationObjs = GetContinuations(traversalObj);
+                continuationObjs.ForEach(obj => continuations.Push(Tuple.Create(depth + 1, obj)));
+
+                callback(traversalObj, depth);
+            }
+        }
+
+        private string DumpState(int state)
+        {
+            StringBuilder builder = new StringBuilder();
+
+            builder.Append("( ");
             // TaskCreationOptions.*
-            if ((state & 0x01) != 0) Write("PreferFairness ");
-            if ((state & 0x02) != 0) Write("LongRunning ");
-            if ((state & 0x04) != 0) Write("AttachedToParent ");
-            if ((state & 0x08) != 0) Write("DenyChildAttach ");
-            if ((state & 0x10) != 0) Write("HideScheduler ");
-            if ((state & 0x40) != 0) Write("RunContinuationsAsynchronously ");
+            if ((state & 0x01) != 0) builder.Append("PreferFairness ");
+            if ((state & 0x02) != 0) builder.Append("LongRunning ");
+            if ((state & 0x04) != 0) builder.Append("AttachedToParent ");
+            if ((state & 0x08) != 0) builder.Append("DenyChildAttach ");
+            if ((state & 0x10) != 0) builder.Append("HideScheduler ");
+            if ((state & 0x40) != 0) builder.Append("RunContinuationsAsynchronously ");
 
             // InternalTaskOptions.*
-            if ((state & 0x0200) != 0) Write("ContinuationTask ");
-            if ((state & 0x0400) != 0) Write("PromiseTask ");
-            if ((state & 0x1000) != 0) Write("LazyCancellation ");
-            if ((state & 0x2000) != 0) Write("QueuedByRuntime ");
-            if ((state & 0x4000) != 0) Write("DoNotDispose ");
+            if ((state & 0x0200) != 0) builder.Append("ContinuationTask ");
+            if ((state & 0x0400) != 0) builder.Append("PromiseTask ");
+            if ((state & 0x1000) != 0) builder.Append("LazyCancellation ");
+            if ((state & 0x2000) != 0) builder.Append("QueuedByRuntime ");
+            if ((state & 0x4000) != 0) builder.Append("DoNotDispose ");
 
             // TASK_STATE_*
-            if ((state & 0x10000) != 0) Write("STARTED ");
-            if ((state & 0x20000) != 0) Write("DELEGATE_INVOKED ");
-            if ((state & 0x40000) != 0) Write("DISPOSED ");
-            if ((state & 0x80000) != 0) Write("EXCEPTIONOBSERVEDBYPARENT ");
-            if ((state & 0x100000) != 0) Write("CANCELLATIONACKNOWLEDGED ");
-            if ((state & 0x200000) != 0) Write("FAULTED ");
-            if ((state & 0x400000) != 0) Write("CANCELED ");
-            if ((state & 0x800000) != 0) Write("WAITING_ON_CHILDREN ");
-            if ((state & 0x1000000) != 0) Write("RAN_TO_COMPLETION ");
-            if ((state & 0x2000000) != 0) Write("WAITINGFORACTIVATION ");
-            if ((state & 0x4000000) != 0) Write("COMPLETION_RESERVED ");
-            if ((state & 0x8000000) != 0) Write("THREAD_WAS_ABORTED ");
-            if ((state & 0x10000000) != 0) Write("WAIT_COMPLETION_NOTIFICATION ");
-            if ((state & 0x20000000) != 0) Write("EXECUTIONCONTEXT_IS_NULL ");
-            if ((state & 0x40000000) != 0) Write("TASKSCHEDULED_WAS_FIRED ");
-            Write(")");
+            if ((state & 0x10000) != 0) builder.Append("STARTED ");
+            if ((state & 0x20000) != 0) builder.Append("DELEGATE_INVOKED ");
+            if ((state & 0x40000) != 0) builder.Append("DISPOSED ");
+            if ((state & 0x80000) != 0) builder.Append("EXCEPTIONOBSERVEDBYPARENT ");
+            if ((state & 0x100000) != 0) builder.Append("CANCELLATIONACKNOWLEDGED ");
+            if ((state & 0x200000) != 0) builder.Append("FAULTED ");
+            if ((state & 0x400000) != 0) builder.Append("CANCELED ");
+            if ((state & 0x800000) != 0) builder.Append("WAITING_ON_CHILDREN ");
+            if ((state & 0x1000000) != 0) builder.Append("RAN_TO_COMPLETION ");
+            if ((state & 0x2000000) != 0) builder.Append("WAITINGFORACTIVATION ");
+            if ((state & 0x4000000) != 0) builder.Append("COMPLETION_RESERVED ");
+            if ((state & 0x8000000) != 0) builder.Append("THREAD_WAS_ABORTED ");
+            if ((state & 0x10000000) != 0) builder.Append("WAIT_COMPLETION_NOTIFICATION ");
+            if ((state & 0x20000000) != 0) builder.Append("EXECUTIONCONTEXT_IS_NULL ");
+            if ((state & 0x40000000) != 0) builder.Append("TASKSCHEDULED_WAS_FIRED ");
+            builder.Append(")");
 
-            WriteLine();
+            return builder.ToString();
         }
 
-        private int GetState(IModuleTypeService typeService, Reader reader, IRuntimeObject obj)
+        private bool IsCompleted(NativeAOTObject obj)
         {
-            IField stateField = GetField(typeService, obj, "m_stateFlags");
-            int state = reader.Read<int>(obj.Address + stateField.Offset);
-            return state;
+            int TASK_STATE_COMPLETED_MASK = 0x1600000;
+            int state = GetState(obj); 
+            return (state & TASK_STATE_COMPLETED_MASK) != 0;
         }
 
-        private IEnumerable<IRuntimeObject> GetContinuations(IModuleTypeService typeService, Reader reader, NativeAOTRuntime runtime, IRuntimeObject obj)
+        private int GetState(NativeAOTObject obj)
         {
-            List<IRuntimeObject> continuationObjects = new List<IRuntimeObject>();
+            AsyncRecord record = GetOrCreateAsyncRecord(obj);
+            return record.state.Value;
+        }
+
+        private IEnumerable<NativeAOTObject> GetContinuations(NativeAOTObject obj)
+        {
+            AsyncRecord record = GetOrCreateAsyncRecord(obj);
+            return record.continuations.Value;
+        }
+
+        private AsyncRecord GetOrCreateAsyncRecord(NativeAOTObject obj)
+        {
+            if (!_asyncRecordsCache.ContainsKey(obj))
+            {
+                AsyncRecord record = new AsyncRecord()
+                {
+                    continuations = new Lazy<IEnumerable<NativeAOTObject>>(() => ParseContinuations(obj)),
+                    state = new Lazy<int>(() => ParseState(obj)),
+                    isTopLevel = true,
+                    includeInReport = Matches(obj)
+                };
+
+                _asyncRecordsCache.Add(obj, record);
+            }
+
+            return _asyncRecordsCache[obj];
+        }
+
+        private IEnumerable<NativeAOTObject> ParseContinuations(NativeAOTObject obj)
+        {
+            List<NativeAOTObject> continuationObjects = new List<NativeAOTObject>();
             if (IsList(obj))
             {
-                IField listItemsField = GetField(typeService, obj, "_items");
+                IField listItemsField = GetField(obj, "_items");
                 ulong arrayAddrAddr = obj.Address + listItemsField.Offset;
-                ulong arrayAddr = reader.Read<SizeT>(arrayAddrAddr);
-                NativeAOTObject backingArray = new NativeAOTObject(arrayAddr, runtime);
+                NativeAOTObject backingArray = GetObjectFromPtrToRef(arrayAddrAddr);
                 for (uint i = 0; i < backingArray.ComponentSize; ++i)
                 {
-                    ulong continuationAddrAddr = arrayAddr + (i * reader.SizeOf<SizeT>());
-                    ulong continuationAddr = reader.Read<SizeT>(continuationAddrAddr);
-                    if (continuationAddr != 0)
+                    ulong continuationAddrAddr = backingArray.Address + (i * Reader.SizeOf<SizeT>());
+                    NativeAOTObject continuationObj = GetObjectFromPtrToRef(continuationAddrAddr);
+                    if (continuationObj != null)
                     {
-                        continuationObjects.Add(new NativeAOTObject(continuationAddr, runtime));
+                        continuationObjects.Add(continuationObj);
                     }
                 }
             }
             else
             {
-                IField continuationField = GetField(typeService, obj, "m_continuationObject");
-                ulong continuationsObjAddr = reader.Read<SizeT>(obj.Address + continuationField.Offset);
-                continuationObjects.Add(new NativeAOTObject(continuationsObjAddr, runtime));
+                IField continuationField;
+                if (TryGetField(obj, "m_continuationObject", out continuationField))
+                {
+                    ulong continuationObjAddrAddr = obj.Address + continuationField.Offset;
+                    NativeAOTObject continuationObj = GetObjectFromPtrToRef(continuationObjAddrAddr);
+                    if (continuationObj != null)
+                    {
+                        continuationObjects.Add(continuationObj);
+                    }
+                }
             }
 
-            return continuationObjects.Select(obj => ResolveContinuation(typeService, reader, obj));
+            return continuationObjects.Select(obj => ResolveContinuation(obj));
         }
 
-        private IRuntimeObject ResolveContinuation(IModuleTypeService typeService, Reader reader, NativeAOTRuntime runtime, IRuntimeObject continuationObj)
+        private int ParseState(NativeAOTObject obj)
         {
-            if (!TryGetField(typeService, continuationObj, "StateMachine", out _))
+            IField stateField;
+            if (TryGetField(obj, "m_stateFlags", out stateField))
+            {
+                int state = Reader.Read<int>(obj.Address + stateField.Offset);
+                return state;
+            }
+
+            return 0;
+        }
+
+        private NativeAOTObject GetOrCreateObject(ulong address)
+        {
+            if (!_objectsCache.ContainsKey(address))
+            {
+                _objectsCache.Add(address, new NativeAOTObject(address, Runtime));
+            }
+
+            return _objectsCache[address];
+        }
+
+        private NativeAOTObject ResolveContinuation(NativeAOTObject continuationObj)
+        {
+            NativeAOTObject tempObj;
+            if (!TryGetField(continuationObj, "StateMachine", out _))
             {
                 IField innerField;
-                if (TryGetField(typeService, continuationObj, "m_task", out innerField))
+                if (TryGetField(continuationObj, "m_task", out innerField))
                 {
                     ulong taskAddrAddr = continuationObj.Address + innerField.Offset;
-                    continuationObj = GetObjectFromPtrToPtr(reader, runtime, taskAddrAddr);
+                    tempObj = GetObjectFromPtrToRef(taskAddrAddr);
+                    if (tempObj != null)
+                    {
+                        continuationObj = tempObj;
+                    }
                 }
                 else
                 {
-                    if (TryGetField(typeService, continuationObj, "m_action", out innerField))
+                    if (TryGetField(continuationObj, "m_action", out innerField))
                     {
+                        ulong actionAddrAddr = continuationObj.Address + innerField.Offset;
+                        tempObj = GetObjectFromPtrToRef(actionAddrAddr);
+                        if (tempObj != null)
+                        {
+                            continuationObj = tempObj;
+                        }
+                    }
 
+                    if (TryGetField(continuationObj, "_target", out innerField))
+                    {
+                        ulong targetAddrAddr = continuationObj.Address + innerField.Offset;
+                        tempObj = GetObjectFromPtrToRef(targetAddrAddr);
+                        if (tempObj != null)
+                        {
+                            continuationObj = tempObj;
+
+                            if (continuationObj.Type.FullName.StartsWith("S_P_CoreLib_System_Runtime_CompilerServices_AsyncMethodBuilderCore_ContinuationWrapper")
+                                && TryGetField(continuationObj, "_continuation", out innerField))
+                            {
+                                ulong wrapperAddrAddr = continuationObj.Address + innerField.Offset;
+                                tempObj = GetObjectFromPtrToRef(wrapperAddrAddr);
+                                if (tempObj != null)
+                                {
+                                    continuationObj = tempObj;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -201,30 +465,49 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             return continuationObj;
         }
 
-        private bool IsList(IRuntimeObject obj)
+        private NativeAOTObject GetObjectFromPtrToRef(ulong objAddrAddr)
         {
-            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Collections_Generic_List_1");
-        }
-
-        private static bool TryGetField(IModuleTypeService typeService, IRuntimeObject obj, string fieldName, out IField field)
-        {
-            try
+            ulong objAddr = Reader.Read<SizeT>(objAddrAddr);
+            if (objAddr == 0)
             {
-                field = GetField(typeService, obj, fieldName);
-            }
-            catch (Exception)
-            {
-                field = null;
-                return false;
+                return null;
             }
 
-            return true;
+            return GetOrCreateObject(objAddr);
         }
 
-        private static IField GetField(IModuleTypeService typeService, IRuntimeObject obj, string fieldName)
+        private bool TryGetField(NativeAOTObject obj, string fieldName, out IField field)
+        {
+            NativeAOTType eeType = (NativeAOTType)obj.Type;
+            if (!_offsetsCache.ContainsKey(eeType.Address))
+            {
+                Dictionary<string, IField> dict = new Dictionary<string, IField>();
+                _offsetsCache.Add(eeType.Address, dict);
+            }
+
+            Dictionary<string, IField> fields = _offsetsCache[eeType.Address];
+            if (!fields.ContainsKey(fieldName))
+            {
+                try
+                {
+                    field = GetField(obj, fieldName);
+                }
+                catch (Exception)
+                {
+                    field = null;
+                }
+
+                fields.Add(fieldName, field);
+            }
+
+            field = fields[fieldName];
+            return field != null;
+        }
+
+        private IField GetField(NativeAOTObject obj, string fieldName)
         {
             IType asyncObjectNativeType = null;
-            if (!typeService.TryGetType(obj.Type.FullName, out asyncObjectNativeType))
+            if (!TypeService.TryGetType(obj.Type.FullName, out asyncObjectNativeType))
             {
                 throw new Exception($"Failed to get type information for {obj.Type.FullName}");
             }
@@ -238,7 +521,7 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             return stateField;
         }
 
-        private bool Matches(IRuntimeObject obj)
+        private bool Matches(NativeAOTObject obj)
         {
             if (Address != 0)
             {
@@ -246,29 +529,61 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             }
             else
             {
-                return IsAsyncType(obj) 
+                return IsAsyncType(obj)
                     && (string.IsNullOrEmpty(Type) || obj.Type.FullName.Contains(Type, StringComparison.InvariantCultureIgnoreCase));
             }
         }
 
-        private bool IsAsyncType(IRuntimeObject obj)
+        private bool IsList(NativeAOTObject obj)
         {
-            return (Tasks && IsTaskType(obj)) || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Runtime_CompilerServices_AsyncTaskMethodBuilder_1_AsyncStateMachineBox_1<");
+            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Collections_Generic_List_1");
         }
 
-        private static bool IsTaskType(IRuntimeObject obj)
+        private bool IsAsyncType(NativeAOTObject obj)
         {
-            // TODO: the desktop/coreclr dumpasync will detect subtypes of task and report those too
-            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_1<")
-                                  || obj.Type.FullName.Equals("S_P_CoreLib_System_Threading_Tasks_Task");
+            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Runtime_CompilerServices_AsyncTaskMethodBuilder_1_AsyncStateMachineBox_1<")
+                    || (Tasks && IsTaskType(obj));
         }
 
-        private static IRuntimeObject GetObjectFromPtrToPtr(Reader reader, NativeAOTRuntime runtime, ulong objAddrAddr)
+        private bool IsTaskType(NativeAOTObject obj)
         {
-            ulong objAddr = reader.Read<SizeT>(objAddrAddr);
-            IRuntimeObject obj = new NativeAOTObject(objAddr, runtime);
-            return obj;
+            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_1<") || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_DelayPromiseWithCancellation")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_WhenAllPromise")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_TaskFactory_CompleteOnInvokePromise")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_UnwrapPromise_1")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromTask_1")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromResultTask_1")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_TwoTaskWhenAnyPromise_1")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromResultTask_2")
+                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromTask")
+                    || obj.Type.FullName.Equals("S_P_CoreLib_System_Threading_Tasks_Task");
+                    // TODO: This is really slow. REALLY slow
+                    //|| HasTaskMembersWeCareAbout(obj);
         }
 
+        private bool HasTaskMembersWeCareAbout(NativeAOTObject obj)
+        {
+            // On desktop and coreclr we can query metadata to figure out if a type is a 
+            // base class of System.Threading.Tasks.Task. We don't have that ability here.
+            // The base class information exists in the symbols, but dbgeng doesn't expose it
+            // to us. In the future it would be nice if we could use DIA or some other symbol
+            // reader to query if it's a subtype of Task. For now we check if it has the 
+            // Task fields we care about and assume.
+            List<string> fieldsWeCareAbout = new List<string>
+            {
+                "m_stateFlags",
+                "m_continuationObject"
+            };
+
+            foreach (string field in fieldsWeCareAbout)
+            {
+                if (!TryGetField(obj, field, out _))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 }
