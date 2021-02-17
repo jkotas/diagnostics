@@ -1,6 +1,7 @@
 ﻿using Microsoft.Diagnostics.RuntimeSnapshotParser;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -19,6 +20,9 @@ namespace Microsoft.Diagnostics.DebugServices.NativeAOT
 
         public ProcessSnapshot Snapshot { get; set; }
 
+        [Option(Name = "--file", Aliases = new string[] { "-f" }, Help = "Name of the file to dump StressLog contents to.")]
+        public string FileName { get; set; }
+
         public override void Invoke()
         {
             if (Snapshot == null)
@@ -27,19 +31,35 @@ namespace Microsoft.Diagnostics.DebugServices.NativeAOT
                 return;
             }
 
-            WriteLine("Dumping StressLog...");
-            WriteLine($"Current Directory: {Environment.CurrentDirectory}");
-            WriteLine();
-            WriteLine("Thread     Timestamp        Message");
-            WriteLine("--------------------------------------------------------------------------------------");
-            var entries = Snapshot.Runtimes.First().StressLogEntries;
-            foreach (StressLogEntry entry in SortEntries(entries))
+            string outFileName = "StressLog.txt";
+            if (!string.IsNullOrEmpty(FileName))
             {
-                Write($"{entry.Thread.ID,-10:X} {entry.Timestamp,-16:X} {entry.Message}");
-                WriteLine();
+                outFileName = FileName;
             }
 
-            WriteLine("--------------------------------------------------------------------------------------");
+            WriteLine("Dumping StressLog...");
+
+            using (StreamWriter writer = new StreamWriter(new FileStream(outFileName, FileMode.Create)))
+            {
+                writer.WriteLine("Thread     Timestamp        Message");
+                writer.WriteLine("--------------------------------------------------------------------------------------");
+                var entries = Snapshot.Runtimes.First().StressLogEntries;
+
+                if (entries.Count == 0)
+                {
+                    WriteLine("StressLog does not exist, no entries will be dumped.");
+                }
+
+                foreach (StressLogEntry entry in SortEntries(entries))
+                {
+                    writer.Write($"{entry.Thread.ID,-10:X} {entry.Timestamp,-16:X} {entry.Message}");
+                    writer.WriteLine();
+                }
+
+                writer.WriteLine("--------------------------------------------------------------------------------------");
+            }
+
+            WriteLine("Done");
         }
 
         private IEnumerable<StressLogEntry> SortEntries(Dictionary<IRuntimeThread, IEnumerable<IStressLogEntry>> entries)

@@ -43,7 +43,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
         // EEType address is the key
         private Dictionary<ulong, Dictionary<string, IField>> _offsetsCache = new Dictionary<ulong, Dictionary<string, IField>>();
 
-
         [Option(Name = "--type", Aliases = new string[] { "-t" }, Help = "Only lists those objects whose type name is a substring match of the specified string.")]
         public string Type { get; set; }
 
