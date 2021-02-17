@@ -59,6 +59,9 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
         [Option(Name = "--completed", Help = "Print async operations that have already completed.")]
         public bool Completed { get; set; }
 
+        [Option(Name = "--userdefined", Aliases= new string[] { "-u" }, Help = "Search for any user defined types that have the right fields to be async objects. This is very slow!")]
+        public bool UserDefined { get; set; }
+
         public override void Invoke()
         {
             if (Snapshot == null)
@@ -232,11 +235,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
             int numChains = asyncObjs.Count;
             foreach (NativeAOTObject obj in asyncObjs)
             {
-                //if (!include || !IsTopLevel(obj))
-                //{
-                //    continue;
-                //}
-
                 WalkContinuations(obj, (continuationObj, _) =>
                 {
                     foreach (NativeAOTObject innerObj in asyncObjs)
@@ -547,18 +545,27 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
         private bool IsTaskType(NativeAOTObject obj)
         {
-            return obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_1<") || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_DelayPromiseWithCancellation")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_WhenAllPromise")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_TaskFactory_CompleteOnInvokePromise")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_UnwrapPromise_1")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromTask_1")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromResultTask_1")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_TwoTaskWhenAnyPromise_1")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromResultTask_2")
-                    || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromTask")
-                    || obj.Type.FullName.Equals("S_P_CoreLib_System_Threading_Tasks_Task");
-                    // TODO: This is really slow. REALLY slow
-                    //|| HasTaskMembersWeCareAbout(obj);
+            bool systemTask = obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_1<") || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_DelayPromiseWithCancellation")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_WhenAllPromise")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_TaskFactory_CompleteOnInvokePromise")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_UnwrapPromise_1")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromTask_1")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromResultTask_1")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_Task_TwoTaskWhenAnyPromise_1")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationResultTaskFromResultTask_2")
+                                || obj.Type.FullName.StartsWith("S_P_CoreLib_System_Threading_Tasks_ContinuationTaskFromTask")
+                                || obj.Type.FullName.Equals("S_P_CoreLib_System_Threading_Tasks_Task");
+
+            if (systemTask)
+            {
+                return true;
+            }
+            else if (UserDefined)
+            {
+                return HasTaskMembersWeCareAbout(obj);
+            }
+
+            return false;
         }
 
         private bool HasTaskMembersWeCareAbout(NativeAOTObject obj)
