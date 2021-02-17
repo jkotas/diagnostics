@@ -894,6 +894,15 @@ LLDBServices::GetNameByOffset(
             hr = E_INVALIDARG;
             goto exit;
         }
+        
+        address = module.ResolveFileAddress(address);
+        if (!address.IsValid())
+        {
+            // TODO: remove logging
+            printf("Address not valid now!\n");
+            hr = E_INVALIDARG;
+            goto exit;
+        }
 
         if (module != address.GetModule())
         {
