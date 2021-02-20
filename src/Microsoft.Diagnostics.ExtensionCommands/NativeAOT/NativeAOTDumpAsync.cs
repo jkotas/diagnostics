@@ -26,11 +26,13 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
 
         private Lazy<IModuleTypeService> _typeService;
 
+        private Lazy<NativeAOTRuntime> _runtime;
+
         public ProcessSnapshot Snapshot { get; set; }
 
         public IModuleService ModuleService { get; set; }
 
-        private NativeAOTRuntime Runtime => (NativeAOTRuntime)Snapshot.Runtimes.First();
+        private NativeAOTRuntime Runtime => _runtime.Value;
 
         private Reader Reader => Runtime.Reader;
 
@@ -87,14 +89,17 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 return typeService;
             });
 
+            _runtime = new Lazy<NativeAOTRuntime>(() =>
+            {
+                return (NativeAOTRuntime)Snapshot.Runtimes.First();
+            });
+
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
             List<NativeAOTObject> foundObjs = new List<NativeAOTObject>();
             foreach (IRuntimeGCHeap heap in Runtime.GC.Heaps)
             {
-                //throw new Exception("TODO: Stacks view. Filter to unique stacks if no filter is applied.");
-
                 HeapWalker walker = heap.GetHeapWalker();
 
                 foreach (IRuntimeObject iobj in walker.EnumerateHeapObjects())

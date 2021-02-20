@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <string.h>
 #include <string>
+#include <vector>
 #include <dlfcn.h>
 #include "sosplugin.h"
 #include "arrayholder.h"
@@ -863,16 +864,16 @@ LLDBServices::GetNameByOffset(
         goto exit;
     }
 
-    address = target.ResolveLoadAddress(offset);
-    if (!address.IsValid())
-    {
-        hr = E_INVALIDARG;
-        goto exit;
-    }
-
     // If module index is invalid, add module name to symbol
     if (moduleIndex == DEBUG_ANY_ID)
     {
+        address = target.ResolveLoadAddress(offset);
+        if (!address.IsValid())
+        {
+            hr = E_INVALIDARG;
+            goto exit;
+        }
+
         module = address.GetModule();
         if (!module.IsValid())
         {
@@ -895,11 +896,9 @@ LLDBServices::GetNameByOffset(
             goto exit;
         }
         
-        address = module.ResolveFileAddress(address);
+        address = module.ResolveFileAddress(offset);
         if (!address.IsValid())
         {
-            // TODO: remove logging
-            printf("Address not valid now!\n");
             hr = E_INVALIDARG;
             goto exit;
         }
@@ -2374,6 +2373,7 @@ LLDBServices::GetTypeId(
         goto exit;
     }
 
+    hr = E_INVALIDARG;
     typeList = module.GetTypes();
     for (int i = 0; i < typeList.GetSize(); ++i)
     {
@@ -2381,6 +2381,7 @@ LLDBServices::GetTypeId(
         if (strcmp(typeName, type.GetName()) == 0)
         {
             *typeId = i;
+            hr = S_OK;
             break;
         }
     }
@@ -2400,8 +2401,12 @@ LLDBServices::GetFieldOffset(
 
     lldb::SBTarget target;
     lldb::SBModule module;
+    lldb::SBTypeList typeList;
     lldb::SBType type;
     lldb::SBTypeMember field;
+    lldb::SBTypeMember baseClassTypeMember;
+    lldb::SBType baseClass;
+    std::vector<lldb::SBType> baseClassTypes;
 
     if (offset == nullptr)
     {
@@ -2425,20 +2430,39 @@ LLDBServices::GetFieldOffset(
         goto exit;
     }
 
-    type = module.GetTypeByID(typeId);
+    typeList = module.GetTypes();
+    type = typeList.GetTypeAtIndex((ULONG)typeId);
     if (!type.IsValid())
     {
         hr = E_INVALIDARG;
         goto exit;
     }
 
-    for (int i = 0; i < type.GetNumberOfFields(); ++i)
+    hr = E_INVALIDARG;
+
+    // lldb only returns the information about the specific class you requested, not any base
+    // classes. So we have to do a DFS to find the field we care about.
+    baseClassTypes.push_back(type);
+    while (baseClassTypes.size() > 0)
     {
-        field = type.GetFieldAtIndex(i);
-        if (strcmp(fieldName, field.GetName()) == 0)
+        type = baseClassTypes.back();
+        baseClassTypes.pop_back();
+
+        for (int fieldIndex = 0; fieldIndex < type.GetNumberOfFields(); ++fieldIndex)
         {
-            *offset = field.GetOffsetInBytes();
-            break;
+            field = type.GetFieldAtIndex(fieldIndex);
+            if (strcmp(fieldName, field.GetName()) == 0)
+            {
+                *offset = field.GetOffsetInBytes();
+                hr = S_OK;
+                goto exit;
+            }
+        }
+
+        for (int baseClassIndex = 0; baseClassIndex < type.GetNumberOfDirectBaseClasses(); ++baseClassIndex)
+        {
+            baseClass = type.GetDirectBaseClassAtIndex(baseClassIndex).GetType();
+            baseClassTypes.push_back(baseClass);
         }
     }
 
