@@ -94,9 +94,6 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 return (NativeAOTRuntime)Snapshot.Runtimes.First();
             });
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
-
             List<NativeAOTObject> foundObjs = new List<NativeAOTObject>();
             foreach (IRuntimeGCHeap heap in Runtime.GC.Heaps)
             {
@@ -125,18 +122,10 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 }
             }
 
-            sw.Stop();
-            WriteLine($"Finished enumerating heap in {sw.ElapsedMilliseconds}ms.");
-            sw.Restart();
-
             if (Address == 0)
             {
                 PrintStats(foundObjs);
             }
-
-            sw.Stop();
-            WriteLine($"Finished printing stats in {sw.ElapsedMilliseconds}ms.");
-            sw.Restart();
 
             if (Stacks && string.IsNullOrEmpty(Type))
             {
@@ -144,17 +133,9 @@ namespace Microsoft.Diagnostics.ExtensionCommands.NativeAOT
                 WriteLine($"In {chains} chains.");
             }
 
-            sw.Stop();
-            WriteLine($"Finished calculating async stacks in {sw.ElapsedMilliseconds}ms.");
-            sw.Restart();
-
             WriteLine();
             WriteLine($"{FormatHelpers.PadByNumberSize("Address", false)} {FormatHelpers.PadByNumberSize("EEtype", false)} {FormatHelpers.PadByNumberSize("State", false)} State/Type");
             PrintTopLevelObjs(foundObjs);
-
-            sw.Stop();
-            WriteLine($"Finished printing top level objs in {sw.ElapsedMilliseconds}ms.");
-            sw.Restart();
 
             WriteLine("--------------------------------------------------------------------------------------");
         }
