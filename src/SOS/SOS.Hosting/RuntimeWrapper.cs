@@ -197,7 +197,14 @@ namespace SOS.Hosting
                 return HResult.E_INVALIDARG;
             }
             if (_clrDataProcess == IntPtr.Zero) {
-                _clrDataProcess = CreateClrDataProcess();
+                try
+                {
+                    _clrDataProcess = CreateClrDataProcess();
+                }
+                catch (Exception)
+                {
+                    return HResult.E_NOINTERFACE;
+                }
             }
             *ppClrDataProcess = _clrDataProcess;
             if (*ppClrDataProcess == IntPtr.Zero) {

@@ -33,22 +33,22 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
 
         public IServiceProvider Services => _serviceProvider;
 
-        public int Id => throw new NotImplementedException();
+        public int Id => -1;
 
         public RuntimeType RuntimeType => RuntimeType.NativeAOT;
 
-        public IModule RuntimeModule => throw new NotImplementedException();
+        public IModule RuntimeModule => null;
 
         public ProcessSnapshot Snapshot => _snapshot;
 
         public string GetDacFilePath()
         {
-            throw new ArgumentException("Native AOT does not have a DAC.");
+            return null;
         }
 
         public string GetDbiFilePath()
         {
-            throw new ArgumentException("Native AOT does not have a DBI.");
+            return null;
         }
 
         public static bool HasNativeAOTRuntime(ITarget target, IMemoryService memoryService)
@@ -63,15 +63,12 @@ namespace Microsoft.Diagnostics.DebugServices.Implementation
             try
             {
                 IModuleService moduleService = target.Services.GetService<IModuleService>();
-                foreach (Module module in moduleService.EnumerateModules())
+                ProcessSnapshot snapshot = new ProcessSnapshot(dataSource);
+                foreach (IDotNetRuntime runtime in snapshot.Runtimes)
                 {
-                    ProcessSnapshot snapshot = new ProcessSnapshot(dataSource);
-                    foreach (IDotNetRuntime runtime in snapshot.Runtimes)
+                    if (runtime is SnapshotParserNativeAOTRuntime)
                     {
-                        if (runtime is SnapshotParserNativeAOTRuntime)
-                        {
-                            return (snapshot, runtime);
-                        }
+                        return (snapshot, runtime);
                     }
                 }
             }
