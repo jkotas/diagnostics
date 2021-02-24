@@ -4646,6 +4646,25 @@ void FindStateMachineTypes(DWORD_PTR* corelibModule, mdTypeDef* stateMachineBox,
 
 DECLARE_API(DumpAsync)
 {
+    {
+        INIT_API_EXT();
+
+        // TODO: this works for the private build of SOS we are giving to the 
+        // Geneva team, but this is not how it should be done for real.
+        IHostServices* hostServices = GetHostServices();
+        if (hostServices != nullptr)
+        {
+            std::string command("aotdumpasync ");
+            command.append(args);
+            Status = hostServices->DispatchCommand(command.c_str());
+
+            if (Status == S_OK)
+            {
+                return S_OK;
+            }
+        }
+    }
+
     INIT_API();
     MINIDUMP_NOT_SUPPORTED();
     if (!g_snapshot.Build())
@@ -5041,6 +5060,25 @@ DECLARE_API(DumpAsync)
 \**********************************************************************/
 DECLARE_API(DumpHeap)
 {
+    {
+        INIT_API_EXT();
+
+        // TODO: this works for the private build of SOS we are giving to the 
+        // Geneva team, but this is not how it should be done for real.
+        IHostServices* hostServices = GetHostServices();
+        if (hostServices != nullptr)
+        {
+            std::string command("aotdumpheap ");
+            command.append(args);
+            Status = hostServices->DispatchCommand(command.c_str());
+
+            if (Status == S_OK)
+            {
+                return S_OK;
+            }
+        }
+    }
+
     INIT_API();
     MINIDUMP_NOT_SUPPORTED();
 
@@ -5066,6 +5104,25 @@ DECLARE_API(DumpHeap)
 
 DECLARE_API(VerifyHeap)
 {
+    {
+        INIT_API_EXT();
+
+        // TODO: this works for the private build of SOS we are giving to the 
+        // Geneva team, but this is not how it should be done for real.
+        IHostServices* hostServices = GetHostServices();
+        if (hostServices != nullptr)
+        {
+            std::string command("aotverifyheap ");
+            command.append(args);
+            Status = hostServices->DispatchCommand(command.c_str());
+
+            if (Status == S_OK)
+            {
+                return S_OK;
+            }
+        }
+    }
+
     INIT_API();
     MINIDUMP_NOT_SUPPORTED();
     ONLY_SUPPORTED_ON_WINDOWS_TARGET();
@@ -7041,78 +7098,68 @@ DECLARE_API(Threads)
 {
     INIT_API();
 
-    IHostServices* hostServices = GetHostServices();
-    if (hostServices != nullptr)
+    BOOL bPrintSpecialThreads = FALSE;
+    BOOL bPrintLiveThreadsOnly = FALSE;
+    BOOL bSwitchToManagedExceptionThread = FALSE;
+    BOOL dml = FALSE;
+
+    CMDOption option[] =
+    {   // name, vptr, type, hasValue
+        {"-special", &bPrintSpecialThreads, COBOOL, FALSE},
+        {"-live", &bPrintLiveThreadsOnly, COBOOL, FALSE},
+        {"-managedexception", &bSwitchToManagedExceptionThread, COBOOL, FALSE},
+        {"/d", &dml, COBOOL, FALSE},
+    };
+    if (!GetCMDOption(args, option, _countof(option), NULL, 0, NULL))
     {
-        std::string command("threads");
-        command.append(args);
-        Status = hostServices->DispatchCommand(command.c_str());
+        return Status;
     }
-    else
+
+    if (bSwitchToManagedExceptionThread)
     {
-        BOOL bPrintSpecialThreads = FALSE;
-        BOOL bPrintLiveThreadsOnly = FALSE;
-        BOOL bSwitchToManagedExceptionThread = FALSE;
-        BOOL dml = FALSE;
+        return SwitchToExceptionThread();
+    }
 
-        CMDOption option[] =
-        {   // name, vptr, type, hasValue
-            {"-special", &bPrintSpecialThreads, COBOOL, FALSE},
-            {"-live", &bPrintLiveThreadsOnly, COBOOL, FALSE},
-            {"-managedexception", &bSwitchToManagedExceptionThread, COBOOL, FALSE},
-            {"/d", &dml, COBOOL, FALSE},
-        };
-        if (!GetCMDOption(args, option, _countof(option), NULL, 0, NULL))
+    // We need to support minidumps for this command.
+    BOOL bMiniDump = IsMiniDumpFile();
+
+    EnableDMLHolder dmlHolder(dml);
+
+    try
+    {
+        Status = PrintThreadsFromThreadStore(bMiniDump, bPrintLiveThreadsOnly);
+        if (bPrintSpecialThreads)
         {
-            return Status;
-        }
+#ifdef FEATURE_PAL
+            Print("\n-special not supported.\n");
+#else //FEATURE_PAL
+            BOOL bSupported = true;
 
-        if (bSwitchToManagedExceptionThread)
-        {
-            return SwitchToExceptionThread();
-        }
-
-        // We need to support minidumps for this command.
-        BOOL bMiniDump = IsMiniDumpFile();
-
-        EnableDMLHolder dmlHolder(dml);
-
-        try
-        {
-            Status = PrintThreadsFromThreadStore(bMiniDump, bPrintLiveThreadsOnly);
-            if (bPrintSpecialThreads)
+            if (!IsWindowsTarget())
             {
-    #ifdef FEATURE_PAL
-                Print("\n-special not supported.\n");
-    #else //FEATURE_PAL
-                BOOL bSupported = true;
-
-                if (!IsWindowsTarget())
-                {
-                    Print("Special thread information is only supported on Windows targets.\n");
-                    bSupported = false;
-                }
-                else if (bMiniDump)
-                {
-                    Print("Special thread information is not available in mini dumps.\n");
-                    bSupported = false;
-                }
-
-                if (bSupported)
-                {
-                    CheckBreakingRuntimeChange();
-
-                    HRESULT Status2 = PrintSpecialThreads();
-                    if (!SUCCEEDED(Status2))
-                        Status = Status2;
-                }
-    #endif // FEATURE_PAL
+                Print("Special thread information is only supported on Windows targets.\n");
+                bSupported = false;
             }
+            else if (bMiniDump)
+            {
+                Print("Special thread information is not available in mini dumps.\n");
+                bSupported = false;
+            }
+
+            if (bSupported)
+            {
+                CheckBreakingRuntimeChange();
+
+                HRESULT Status2 = PrintSpecialThreads();
+                if (!SUCCEEDED(Status2))
+                    Status = Status2;
+            }
+#endif // FEATURE_PAL
         }
-        catch (sos::Exception &e)
-        {
-            ExtOut("%s\n", e.what());
-        }
+    }
+    catch (sos::Exception &e)
+    {
+        ExtOut("%s\n", e.what());
     }
 
     return Status;
@@ -10358,6 +10405,25 @@ HRESULT GetIntermediateLangMap(BOOL bIL, const DacpCodeHeaderData& codeHeaderDat
 \**********************************************************************/
 DECLARE_API(DumpLog)
 {
+    {
+        INIT_API_EXT();
+
+        // TODO: this works for the private build of SOS we are giving to the 
+        // Geneva team, but this is not how it should be done for real.
+        IHostServices* hostServices = GetHostServices();
+        if (hostServices != nullptr)
+        {
+            std::string command("aotdumplog ");
+            command.append(args);
+            Status = hostServices->DispatchCommand(command.c_str());
+
+            if (Status == S_OK)
+            {
+                return S_OK;
+            }
+        }
+    }
+
     INIT_API_NO_RET_ON_FAILURE();
 
     MINIDUMP_NOT_SUPPORTED();

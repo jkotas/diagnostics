@@ -8,7 +8,7 @@ using System.Text;
 namespace Microsoft.Diagnostics.DebugServices.NativeAOT
 {
 
-    [Command(Name = "aotstresslog", Help = "Displays stress log entries.")]
+    [Command(Name = "aotdumplog", Help = "Displays stress log entries.")]
     public class NativeAOTStressLogCommand : CommandBase
     {
         class StressLogEntry
