@@ -26,7 +26,8 @@
   
   <ItemGroup>
     <Reference Include="Microsoft.Diagnostics.RuntimeSnapshotParser">
-      <HintPath>..\..\..\dotnet-diagnostictests.noahfalk\src\RuntimeSnapshotParser\Microsoft.Diagnostics.RuntimeSnapshotParser\bin\Release\netstandard2.0\Microsoft.Diagnostics.RuntimeSnapshotParser.dll</HintPath>
+      <HintPath Condition="'$(OS)'=='Windows_NT'">..\..\..\dotnet-diagnostictests.noahfalk\src\RuntimeSnapshotParser\Microsoft.Diagnostics.RuntimeSnapshotParser\bin\Release\netstandard2.0\Microsoft.Diagnostics.RuntimeSnapshotParser.dll</HintPath>
+      <HintPath Condition="'$(OS)'!='Windows_NT'">/home/davmason/snapshotparser/Microsoft.Diagnostics.RuntimeSnapshotParser.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

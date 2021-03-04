@@ -30,6 +30,10 @@ LLDBServices::LLDBServices(lldb::SBDebugger debugger) :
     m_currentThread(nullptr),
     m_currentStopId(0)
 {
+    printf("Loading SOS plugin with NativeAOT support. This SOS is incompatible with the "
+           "SOS shipped with dotnet-sos. If you have a ~/.lldbinit that loads another SOS "
+           "this plugin may crash during load.\n");
+
     ClearCache();
 
     lldb::SBProcess process = GetCurrentProcess();
@@ -2192,6 +2196,7 @@ LLDBServices::OutputString(
         file = m_debugger.GetOutputFileHandle();
     }
     fputs(str, file);
+    fflush(file);
 }
 
 HRESULT 
