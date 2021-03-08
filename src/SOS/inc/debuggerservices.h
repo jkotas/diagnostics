@@ -151,6 +151,7 @@ public:
 
     virtual HRESULT STDMETHODCALLTYPE GetFieldOffset(
         ULONG moduleIndex,
+        PCSTR typeName,
         ULONG64 typeId,
         PCSTR fieldName,
         PULONG offset) = 0;

@@ -463,6 +463,7 @@ DbgEngServices::GetTypeId(
 HRESULT 
 DbgEngServices::GetFieldOffset(
     ULONG moduleIndex,
+    PCSTR typeName, // Unused on windbg
     ULONG64 typeId,
     PCSTR fieldName,
     PULONG offset)

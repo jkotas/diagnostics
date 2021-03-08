@@ -2378,17 +2378,12 @@ LLDBServices::GetTypeId(
         goto exit;
     }
 
-    hr = E_INVALIDARG;
-    typeList = module.GetTypes();
-    for (int i = 0; i < typeList.GetSize(); ++i)
+    *typeId = (ULONG)-1;
+    type = module.FindFirstType(typeName);
+    if (!type.IsValid())
     {
-        type = typeList.GetTypeAtIndex(i);
-        if (strcmp(typeName, type.GetName()) == 0)
-        {
-            *typeId = i;
-            hr = S_OK;
-            break;
-        }
+        hr = E_INVALIDARG;
+        goto exit;
     }
 
 exit:
@@ -2398,6 +2393,7 @@ exit:
 HRESULT
 LLDBServices::GetFieldOffset(
     ULONG moduleIndex,
+    PCSTR typeName,
     ULONG64 typeId,
     PCSTR fieldName,
     PULONG offset)
@@ -2435,14 +2431,7 @@ LLDBServices::GetFieldOffset(
         goto exit;
     }
 
-    typeList = module.GetTypes();
-    if (typeId >= typeList.GetSize())
-    {
-        hr = E_INVALIDARG;
-        goto exit;
-    }
-
-    type = typeList.GetTypeAtIndex((ULONG)typeId);
+    type = module.FindFirstType(typeName);
     if (!type.IsValid())
     {
         hr = E_INVALIDARG;

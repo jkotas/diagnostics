@@ -335,14 +335,16 @@ namespace SOS
             }
         }
 
-        public HResult GetFieldOffset(int moduleIndex, ulong typeId, string fieldName, out uint offset)
+        public HResult GetFieldOffset(int moduleIndex, ulong typeId, string typeName, string fieldName, out uint offset)
         {
             if (string.IsNullOrEmpty(fieldName)) throw new ArgumentException(nameof(fieldName));
 
+            byte[] typeNameBytes = Encoding.ASCII.GetBytes(typeName + "\0");
             byte[] fieldNameBytes = Encoding.ASCII.GetBytes(fieldName + "\0");
+            fixed (byte* typeNamePtr = typeNameBytes)
             fixed (byte *fieldNamePtr = fieldNameBytes)
             {
-                return VTable.GetFieldOffset(Self, moduleIndex, typeId, fieldNamePtr, out offset);
+                return VTable.GetFieldOffset(Self, moduleIndex, typeNamePtr, typeId, fieldNamePtr, out offset);
             }
         }
     }
@@ -373,6 +375,6 @@ namespace SOS
         public readonly delegate* unmanaged[Stdcall]<IntPtr, int, ulong, byte*, int, out uint, out ulong, HResult> GetSymbolByOffset;
         public readonly delegate* unmanaged[Stdcall]<IntPtr, int, byte*, out ulong, HResult> GetOffsetBySymbol;
         public readonly delegate* unmanaged[Stdcall]<IntPtr, int, byte*, out ulong, HResult> GetTypeId;
-        public readonly delegate* unmanaged[Stdcall]<IntPtr, int, ulong, byte*, out uint, HResult> GetFieldOffset;
+        public readonly delegate* unmanaged[Stdcall]<IntPtr, int, byte*, ulong, byte*, out uint, HResult> GetFieldOffset;
     }
 }

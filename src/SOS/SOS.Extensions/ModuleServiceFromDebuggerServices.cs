@@ -45,12 +45,14 @@ namespace SOS.Extensions
             private ModuleServiceFromDebuggerServices _moduleService;
             private IModule _module;
             private ulong _typeId;
+            private string _typeName;
 
-            public TypeFromDebuggerServices(ModuleServiceFromDebuggerServices moduleService, IModule module, ulong typeId)
+            public TypeFromDebuggerServices(ModuleServiceFromDebuggerServices moduleService, IModule module, ulong typeId, string typeName)
             {
                 _moduleService = moduleService;
                 _module = module;
                 _typeId = typeId;
+                _typeName = typeName;
             }
 
             public string Name => throw new NotImplementedException();
@@ -62,7 +64,7 @@ namespace SOS.Extensions
             public bool TryGetField(string fieldName, out IField field)
             {
                 uint offset = 0;
-                HResult hr = _moduleService._debuggerServices.GetFieldOffset(_module.ModuleIndex, _typeId, fieldName, out offset);
+                HResult hr = _moduleService._debuggerServices.GetFieldOffset(_module.ModuleIndex, _typeId, _typeName, fieldName, out offset);
                 if (hr != HResult.S_OK)
                 {
                     field = null;
@@ -192,7 +194,7 @@ namespace SOS.Extensions
                     return false;
                 }
 
-                type = new TypeFromDebuggerServices(_moduleService, this, typeId);
+                type = new TypeFromDebuggerServices(_moduleService, this, typeId, typeName);
                 return true;
             }
 
