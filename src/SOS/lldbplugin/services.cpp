@@ -2436,6 +2436,12 @@ LLDBServices::GetFieldOffset(
     }
 
     typeList = module.GetTypes();
+    if (typeId >= typeList.GetSize())
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
+
     type = typeList.GetTypeAtIndex((ULONG)typeId);
     if (!type.IsValid())
     {
