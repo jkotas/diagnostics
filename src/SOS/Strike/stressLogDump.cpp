@@ -339,19 +339,25 @@ StressMsg* GetStressMsgInLatestVersion(StressMsg* rawMsg, int version)
         return rawMsg;
     }
 
+    static const size_t formatOffsetLowBits = 26;
+    static const size_t formatOffsetHighBits = 13;
+
     struct StressMsgV3
     {
-        uint32_t numberOfArgsLow  : 3;                   // at most 7 arguments here
-        uint32_t formatOffset  : 26;                     // low bits offset of format string in modules
-        uint32_t numberOfArgsHigh : 3;                   // extend number of args in a backward compat way
-        uint32_t facility;                               // facility used to log the entry
-        uint64_t timeStamp;                              // time when mssg was logged
+
+        // We split the format offset to ensure that we utilize every bit and that
+        // the compiler does not align the format offset to a new 64-bit boundary.
+        uint64_t facility : 32;                           // facility used to log the entry
+        uint64_t numberOfArgs : 6;                       // number of arguments
+        uint64_t formatOffsetLow : formatOffsetLowBits;   // offset of format string in modules
+        uint64_t formatOffsetHigh : formatOffsetHighBits; // offset of format string in modules
+        uint64_t timeStamp : 51;                          // time when msg was logged (100ns ticks since runtime start)
     };
     static_assert(sizeof(StressMsg) == sizeof(StressMsgV3), "StressMsgV3 should be the same size as the current StressMsg struct");
 
     StressMsgV3* msgV3 = reinterpret_cast<StressMsgV3*>(rawMsg);
-    uint32_t numberOfArgs = msgV3->numberOfArgsLow | (msgV3->numberOfArgsHigh << 3);
-    uint64_t formatOffset = msgV3->formatOffset;
+    uint32_t numberOfArgs = msgV3->numberOfArgs;
+    uint64_t formatOffset = msgV3->formatOffsetLow + (msgV3->formatOffsetHigh << formatOffsetLowBits);
     uint32_t facility = msgV3->facility;
     uint64_t timeStamp = msgV3->timeStamp;
     rawMsg->SetNumberOfArgs(numberOfArgs);
@@ -595,12 +601,14 @@ HRESULT StressLog::Dump(ULONG64 outProcLog, const char* fileName, struct IDebugD
     }
 
 FREE_MEM:
+#if 0
     // clean up the 'logs' list
     while (logs) {
         ThreadStressLog* temp = logs;
         logs = logs->next;
         delete temp;
     }
+#endif
 
     return hr;
 }

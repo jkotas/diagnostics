@@ -4078,7 +4078,11 @@ public:
 //
 HRESULT LoadClrDebugDll(void)
 {
-    _ASSERTE(g_pRuntime != nullptr);
+    if (g_pRuntime == nullptr)
+    {
+        return E_FAIL;
+    }
+
     HRESULT hr = g_pRuntime->GetClrDataProcess(&g_clrData);
     if (FAILED(hr))
     {

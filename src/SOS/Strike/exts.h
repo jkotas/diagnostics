@@ -216,11 +216,11 @@ public:
     if ((Status = ArchQuery()) != S_OK) return Status;
 
 #define INIT_API_EE()                                           \
-    if ((Status = GetRuntime(&g_pRuntime)) != S_OK)             \
-    {                                                           \
-        EENotLoadedMessage(Status);                             \
-        return Status;                                          \
-    }                                                           
+    // if ((Status = GetRuntime(&g_pRuntime)) != S_OK)             \
+    // {                                                           \
+    //    EENotLoadedMessage(Status);                             \
+    //    return Status;                                          \
+    // }                                                           
 
 #define INIT_API_NODAC()                                        \
     INIT_API_NOEE()                                             \
@@ -265,7 +265,6 @@ public:
     INIT_API_NODAC_PROBE_MANAGED(name)                          \
     if ((Status = LoadClrDebugDll()) != S_OK)                   \
     {                                                           \
-        ExtOut("Failed to load data access module (%s), 0x%08x\n", GetDacDllName(), Status); \
         ExtOut("Some functionality may be impaired\n");         \
     }                                                           \
     else                                                        \

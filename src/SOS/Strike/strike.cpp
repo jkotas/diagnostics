@@ -7521,6 +7521,7 @@ DECLARE_API(DumpLog)
 {
     INIT_API_NO_RET_ON_FAILURE("dumplog");
     MINIDUMP_NOT_SUPPORTED();
+#if false
     _ASSERTE(g_pRuntime != nullptr);
 
     // Not supported on desktop runtime
@@ -7536,6 +7537,7 @@ DECLARE_API(DumpLog)
     }
 
     LoadRuntimeSymbols();
+#endif
 
     const char* fileName = "StressLog.txt";
     CLRDATA_ADDRESS StressLogAddress = (TADDR)0;
